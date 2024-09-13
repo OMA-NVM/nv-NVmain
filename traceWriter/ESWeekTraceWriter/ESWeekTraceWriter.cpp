@@ -52,3 +52,17 @@ void ESWeekTraceWriter::CreateTrace() {
  *    traceFile << static_cast<unsigned int>(data) << std::endl;
  * 3) Return "true" at the end of thefunction.
  */
+bool ESWeekTraceWriter::SetNextAccess(NVM::TraceLine* nextAccess) {
+    auto address = nextAccess->GetAddress().GetPhysicalAddress();
+    auto size = nextAccess->GetData().GetSize();
+    auto index = size - 1;
+    auto data = nextAccess->GetData().GetByte(index);
+    auto operation = nextAccess->GetOperation();
+
+    if(operation != NVM::WRITE) {
+        return true;
+    }
+
+    traceFile << address << " | " << static_cast<unsigned int>(data) << std::endl;
+    return true;
+}

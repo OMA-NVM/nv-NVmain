@@ -29,6 +29,7 @@ namespace ESWeek {
              * and its parameter is a NVM::TraceLine pointer named
              * "nextAccess".
              */
+            virtual bool SetNextAccess(NVM::TraceLine* nextAccess) override;
     };
 }
 
