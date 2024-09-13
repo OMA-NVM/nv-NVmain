@@ -46,6 +46,7 @@
  * ESWeek-Tutorial Exercise 1:
  * Add the header file "ESWeekTraceWriter.h" here.
  */
+#include "traceWriter/ESWeekTraceWriter/ESWeekTraceWriter.h"
 
 using namespace NVM;
 
@@ -75,6 +76,8 @@ GenericTraceWriter *TraceWriterFactory::CreateNewTraceWriter( std::string writer
      * ESWeek, i.e., it needs to be addressed as
      * ESWeek::ESWeekTraceWriter.
      */
+    else if( writer == "ESWeekTraceWriter" )
+        tracer = new ESWeek::ESWeekTraceWriter( );
 
     if( tracer == NULL )
         std::cout << "NVMain: Unknown trace writer `" << writer << "'." 

@@ -18,6 +18,7 @@ namespace ESWeek {
              * function's declaration. Its return type is void
              * and it does not have any arguments.
              */
+            virtual void CreateTrace();
 
             /*
              * ESWeek-Tutorial Exercise 2:

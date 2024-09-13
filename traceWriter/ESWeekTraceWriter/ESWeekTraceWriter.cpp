@@ -11,6 +11,9 @@ using namespace ESWeek;
  * with the standard operator <<. E.g.:
  * traceFile << "My" << " first " << "text" << std::endl;
  */
+void ESWeekTraceWriter::CreateTrace() {
+    traceFile << "Hello World" << std::endl;
+}
 
 /*
  * ESWeek-Tutorial Exercise 2:

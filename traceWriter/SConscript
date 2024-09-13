@@ -50,4 +50,5 @@ NVMainSource('TraceWriterFactory.cpp')
 # ESWeek-Tutorial Exercise 1:
 # Add the source file "ESWeekTraceWriter.cpp" here.
 ###
+NVMainSource('ESWeekTraceWriter/ESWeekTraceWriter.cpp')
 NVMainSource('ESWeekTraceWriter/ESWeekTraceWriterBase.cpp')
