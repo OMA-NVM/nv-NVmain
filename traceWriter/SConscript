@@ -46,3 +46,8 @@ NVMainSource('VerilogTrace/VerilogTraceWriter.cpp')
 NVMainSource('DRAMPower2Trace/DRAMPower2TraceWriter.cpp')
 NVMainSource('TraceWriterFactory.cpp')
 
+###
+# ESWeek-Tutorial Exercise 1:
+# Add the source file "ESWeekTraceWriter.cpp" here.
+###
+NVMainSource('ESWeekTraceWriter/ESWeekTraceWriterBase.cpp')

@@ -42,6 +42,11 @@
 #include "traceWriter/VerilogTrace/VerilogTraceWriter.h"
 #include "traceWriter/DRAMPower2Trace/DRAMPower2TraceWriter.h"
 
+/*
+ * ESWeek-Tutorial Exercise 1:
+ * Add the header file "ESWeekTraceWriter.h" here.
+ */
+
 using namespace NVM;
 
 GenericTraceWriter *TraceWriterFactory::CreateNewTraceWriter( std::string writer )
@@ -62,6 +67,14 @@ GenericTraceWriter *TraceWriterFactory::CreateNewTraceWriter( std::string writer
         tracer = new VerilogTraceWriter( );
     else if( writer == "DRAMPower2Trace" )
         tracer = new DRAMPower2TraceWriter( );
+    /*
+     * ESWeek-Tutorial Exercise 1:
+     * Add the ESWeekTraceWriter here. Check out the
+     * other trace writers above as an example. Note
+     * that the ESWeekTraceWriter is in the namespace
+     * ESWeek, i.e., it needs to be addressed as
+     * ESWeek::ESWeekTraceWriter.
+     */
 
     if( tracer == NULL )
         std::cout << "NVMain: Unknown trace writer `" << writer << "'." 

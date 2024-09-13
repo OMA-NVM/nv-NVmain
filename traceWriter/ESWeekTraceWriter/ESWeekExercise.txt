@@ -1,0 +1,73 @@
+--- GENERAL ---
+- Objective: Create a trace writer "ESWeekTraceWriter"
+- You are provided with some set up classes / functionalities
+- "ESWeekTraceWriter" and its base class "ESWeekTraceWriterBase" can be found
+  in "repositoryName/simulator/nvmain/traceWriter/ESWeekTraceWriter/"
+- For this whole tutorial, you can use the script "Control.sh" that is placed
+  in the root folder of the repository.
+
+--- EXERCISE 1 ---
+- Objective: Integrate "ESWeekTraceWriter" into the framework and produce a
+             "Hello World" trace entry.
+- Relevant files:
+    - Configuration:
+        - Path: "repositoryName/simulator/nvmain/Config/printtrace_tu_dortmund.config"
+        - Contains a lot information on the simulated memory
+        - Relevant fields:
+            - PrintPreTrace: Flag that enables / disables the configured trace writer
+                -> Leave as is
+            - PreTraceFile: Target file to put the gathered data into
+                -> Leave as is
+            - PreTraceWriter: Name of the trace writer to use
+                -> Put "ESWeekTraceWriter" here (without "")
+    - Build Sources:
+        - Path: "repositoryName/simulator/nvmain/traceWriter/SConscript"
+        - Contains all source files from the respective folder that should be
+          accounted for during the simulation
+        - Place the source file "ESWeekTraceWriter.cpp" here. We've left you a
+          comment there to orientate.
+    - Trace Writer Factory:
+        - Path: "repositoryName/simulator/nvmain/traceWriter/TraceWriterFactory.cpp"
+        - Is able to generate all trace writer
+        - Add your the "ESWeekTraceWriter" there. We've left you some comments to help
+        - Also check out how the other trace writer have been added for help
+    - ESWeekTraceWriter.h/.cpp:
+        - We have left you comments in the code on what to do
+- Compilation execution:
+    - Use the control script
+    - Command "c" to compile
+        - Note that your interaction is required here. You are told that some pre-commit/
+          commit-msg hooks are missing. Press Enter to proceed. Afterward you are asked
+          if you want to continue compilation. Proceed by entering "y" and press enter.
+    - Command "r" to run
+    - See if the simulation is still running by typing "ps" in the terminal. When "gem5.fast"
+      is present, your results are not ready yet.
+- Results:
+    - Stored in "repositoryName/results/helloworld.d/nvmain.nvt"
+    - See if it contains "Hello World"
+
+--- EXAMPLE SOLUTION EXERCISE 1 ---
+- Use the control script and execute command "ex1solution"
+- Your changes will be stashed for later usage
+
+--- MOVE TO EXERCISE 2 ---
+- Continue with what you've done
+OR
+- Use the control script and execute command "ex2"
+- Your changes will be stashed for later usage
+
+--- EXERCISE 2 ---
+- Objective: Gather data on the system's memory accesses and put them
+             to the trace file.
+- You need to create and modify the function "SetNextAccess()" in the
+  "ESWeekTraceWriter".
+- The function is the callhook that connects the "ESWeekTraceWriter" to
+  the actual simulation. It will be called with every memory access.
+- We have left you with some comments in the code for more details.
+- At the end of the exercise, compile and run like you did for exercise 1.
+- Results might contain many similar result (e.g.: all 0). Just scroll
+  down a bit and you will see some variaty.
+
+--- EXAMPLE SOLUTION EXERCISE 2 ---
+- Use the control script and execute command "ex2solution"
+- Your changes will be stashed for later usage
