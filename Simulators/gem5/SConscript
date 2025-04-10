@@ -38,7 +38,7 @@ if "nvmain" in env['EXTRAS'].lower() and not 'NVMAIN_BUILD' in env:
     env.Append(CPPDEFINES=['ISAISarm'])
 
     Source('nvmain_mem.cc')
-    if ARGUMENTS.get("tu_dortmund", 0) == "1": # Needs to be compared as argument is string
+    if ARGUMENTS.get("bitflip", 0) == "1": # Needs to be compared as argument is string
         Source('nvmain_write_pmu.cc')
         Source('nvmain_read_pmu.cc')
 
@@ -46,7 +46,7 @@ if "nvmain" in env['EXTRAS'].lower() and not 'NVMAIN_BUILD' in env:
     DebugFlag('NVMainMin')
 
     SimObject('NVMainMemory.py', sim_objects=['NVMainMemory'])
-    if ARGUMENTS.get("tu_dortmund", 0) == "1": # Needs to be compared as argument is string
+    if ARGUMENTS.get("bitflip", 0) == "1": # Needs to be compared as argument is string
         SimObject('NVMainWritePMU.py', sim_objects=['NVMainWritePMU'])
         SimObject('NVMainReadPMU.py', sim_objects=['NVMainReadPMU'])
 
