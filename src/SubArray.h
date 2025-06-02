@@ -84,6 +84,7 @@ class SubArray : public NVMObject
     ~SubArray( );
 
     bool Activate( NVMainRequest *request );
+    bool Rowclone( NVMainRequest *request );
     bool Read( NVMainRequest *request );
     bool Write( NVMainRequest *request );
     bool Precharge( NVMainRequest *request );
@@ -184,7 +185,7 @@ class SubArray : public NVMObject
 
     uint64_t worstCaseEndurance, averageEndurance;
 
-    ncounter_t reads, writes, activates, precharges, refreshes;
+    ncounter_t reads, writes, activates, rowclones, precharges, refreshes;
     ncounter_t idleTimer;
 
     ncounter_t openRow;

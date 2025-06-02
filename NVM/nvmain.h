@@ -88,6 +88,7 @@ class NVMain : public NVMObject
 
     ncounter_t totalReadRequests;
     ncounter_t totalWriteRequests;
+    ncounter_t totalPIMRequests;
     ncounter_t successfulPrefetches;
     ncounter_t unsuccessfulPrefetches;
 

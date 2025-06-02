@@ -117,6 +117,7 @@ SubArray::SubArray( )
     activates = 0;
     precharges = 0;
     refreshes = 0;
+    rowclones = 0;    
 
     actWaits = 0;
     actWaitTotal = 0;
@@ -244,6 +245,7 @@ void SubArray::RegisterStats( )
     AddStat(activates);
     AddStat(precharges);
     AddStat(refreshes);
+    AddStat(rowclones);    
 
     if( endrModel )
     {
@@ -351,6 +353,69 @@ bool SubArray::Activate( NVMainRequest *request )
     }
 
     activates++;
+
+    return true;
+}
+
+/**
+ * Perfrom overlapped activate on an open subarray
+*/
+bool SubArray::Rowclone( NVMainRequest *request ){
+    uint64_t activateRow;
+
+    request->address.GetTranslatedAddress( &activateRow, NULL, NULL, NULL, NULL, NULL );
+
+    /* Check if we need to cancel or pause a write to service this request. */
+    CheckWritePausing( );
+    if(  state != SUBARRAY_OPEN )
+    {
+        std::cerr << "NVMain Error: try to perform overlapped ACTIVATE on subarray that is not open!"
+            << std::endl;
+        return false;
+    }
+
+    /* Update timing constraints */
+    nextPrecharge = MAX( nextPrecharge, 
+                         GetEventQueue()->GetCurrentCycle() 
+                             + MAX( p->tRCD, 0 ) );
+
+    nextPowerDown = MAX( nextPowerDown, 
+                         GetEventQueue()->GetCurrentCycle() 
+                             + MAX( p->tRCD, 0 ) );
+
+    /* send event response back up (bfm3)*/
+    GetEventQueue( )->InsertEvent( EventResponse, this, request, 
+                    GetEventQueue()->GetCurrentCycle() + p->tRCD );
+
+    /* 
+     * The relative row number is record rather than the absolute row number 
+     * within the subarray
+     */
+    openRow = activateRow;
+
+    state = SUBARRAY_OPEN;
+    writeCycle = false;
+
+    lastActivate = GetEventQueue()->GetCurrentCycle();
+
+    /* Add to bank's total energy. */
+    if( p->EnergyModel == "current" )
+    {
+        /* DRAM Model */
+        double tRC = (double) p->tRCD;
+
+        subArrayEnergy += ( (p->EIDD0 * tRC) - (p->EIDD3N *tRC) ) / (double)(p->BANKS); //active energy - idle energy
+
+        activeEnergy += ( (p->EIDD0 * tRC) - (p->EIDD3N *tRC) ) / (double)(p->BANKS); //active energy - idle energy
+    }
+    else
+    {
+        /* Flat energy model. */
+        subArrayEnergy += p->Erd / (double)(p->BANKS); //TODO change this to the correct value
+        activeEnergy += p->Erd / (double)(p->BANKS);
+    }
+
+    rowclones++;
 
     return true;
 }
@@ -1143,6 +1208,16 @@ bool SubArray::IsIssuable( NVMainRequest *req, FailReason *reason )
             }
         }
     }
+    else if ( req->type == ROWCLONE)
+    {
+        if( state != SUBARRAY_OPEN  /* the subarray is not active */
+            || ( p->WritePausing && isWriting && writeRequest->flags & NVMainRequest::FLAG_FORCED ) ) /* or, write can't be paused. */
+        {
+            rv = false;
+            if( reason ) 
+                reason->reason = SUBARRAY_TIMING;
+        }
+    }    
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
         if( nextRead > (GetEventQueue()->GetCurrentCycle()) /* if it is too early to read */
@@ -1243,7 +1318,9 @@ bool SubArray::IssueCommand( NVMainRequest *req )
             case READ_PRECHARGE:
                 rv = this->Read( req );
                 break;
-            
+            case ROWCLONE:
+                rv = this->Rowclone( req );
+                break;            
             case WRITE:
             case WRITE_PRECHARGE:
                 rv = this->Write( req );

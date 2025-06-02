@@ -67,6 +67,7 @@ FRFCFS::FRFCFS( )
 
     mem_reads = 0;
     mem_writes = 0;
+    mem_rowclones = 0;
 
     rb_hits = 0;
     rb_miss = 0;
@@ -109,6 +110,7 @@ void FRFCFS::RegisterStats( )
 {
     AddStat(mem_reads);
     AddStat(mem_writes);
+    AddStat(mem_rowclones);
     AddStat(rb_hits);
     AddStat(rb_miss);
     AddStat(starvation_precharges);
@@ -157,10 +159,13 @@ bool FRFCFS::IssueCommand( NVMainRequest *req )
      */
     Enqueue( 0, req );
 
-    if( req->type == READ )
+    if( req->type == READ ){
         mem_reads++;
-    else
+    } else if(req->type == WRITE) {
         mem_writes++;
+    } else if(req->type == ROWCLONE){
+        mem_rowclones++;
+    }
 
     /*
      *  Return whether the request could be queued. Return false if the queue is full.
@@ -258,8 +263,11 @@ void FRFCFS::Cycle( ncycle_t steps )
 
     /* Issue the commands for this transaction. */
     if( nextRequest != NULL )
-    {
-        IssueMemoryCommands( nextRequest );
+    {   //handle PUM commands 
+        if (nextRequest->type == ROWCLONE)
+            IssuePIMCommands( nextRequest );
+        else
+            IssueMemoryCommands( nextRequest );
     }
 
     /* Issue any commands in the command queues. */

@@ -62,6 +62,7 @@ NVMain::NVMain( )
 
     totalReadRequests = 0;
     totalWriteRequests = 0;
+    totalPIMRequests = 0;
 
     prefetcher = NULL;
     successfulPrefetches = 0;
@@ -362,16 +363,16 @@ void NVMain::PrintPreTrace( NVMainRequest *request )
     {
         TraceLine tl;
 
-        tl.SetLine( request->address,
-        #if TU_DORTMUND
-        request->programCounter,
-        #endif
-                    request->type,
-                    GetEventQueue( )->GetCurrentCycle( ),
-                    request->data,
-                    request->oldData,
-                    request->threadId 
-                  );
+        tl.SetLine( request->address, request->address2,
+            #if TU_DORTMUND
+             request->programCounter,
+            #endif
+                request->type,
+                GetEventQueue( )->GetCurrentCycle( ),
+                request->data,
+                request->oldData,
+                request->threadId 
+                );
 
         preTracer->SetNextAccess( &tl );
     }
@@ -412,11 +413,20 @@ bool NVMain::IssueCommand( NVMainRequest *request )
         if( request->type == READ ) 
         {
             totalReadRequests++;
+        } 
+        else if(request->type == ROWCLONE)
+        {
+            /* Translate address 2 for RC */
+            GetDecoder( )->Translate( request->address2.GetPhysicalAddress( ), 
+                                &row, &col, &bank, &rank, &channel, &subarray );
+            request->address2.SetTranslatedAddress( row, col, bank, rank, channel, subarray );
+            totalPIMRequests++;
         }
         else
         {
             totalWriteRequests++;
         }
+        
 
         PrintPreTrace( request );
     }
@@ -455,6 +465,10 @@ bool NVMain::IssueAtomic( NVMainRequest *request )
         if( request->type == READ ) 
         {
             totalReadRequests++;
+        }
+        else if(request->type == ROWCLONE)
+        {
+            totalPIMRequests++;
         }
         else
         {
@@ -527,6 +541,7 @@ void NVMain::RegisterStats( )
 {
     AddStat(totalReadRequests);
     AddStat(totalWriteRequests);
+    AddStat(totalPIMRequests);
     AddStat(successfulPrefetches);
     AddStat(unsuccessfulPrefetches);
 }

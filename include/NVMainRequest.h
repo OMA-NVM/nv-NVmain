@@ -48,6 +48,7 @@ enum OpType
     NOP = 0,        /* No Operation */
     ACTIVATE,       /* a.k.a. RAS */
     READ,           /* a.k.a. CAS-R */ 
+    ROWCLONE,
     READ_PRECHARGE, /* CAS-R with implicit PRECHARGE */ 
     WRITE,          /* a.k.a. CAS-W */  
     WRITE_PRECHARGE,/* CAS-W with implicit PRECHARGE */ 
@@ -142,6 +143,7 @@ class NVMainRequest
     };
 
     NVMAddress address;            //< Address of request
+    NVMAddress address2;           // Address of ROWCLONE destination   
     OpType type;                   //< Operation type of request (read, write, etc)
     BulkCommand bulkCmd;           //< Bulk Commands (i.e., Read+Precharge, Write+Precharge, etc)
     ncounters_t threadId;                  //< Thread ID of issuing application

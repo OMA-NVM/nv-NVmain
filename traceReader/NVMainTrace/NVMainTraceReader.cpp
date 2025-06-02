@@ -95,9 +95,11 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     unsigned int cycle = 0;
     OpType operation = READ;
     uint64_t address;
+    uint64_t address2;
     NVMDataBlock dataBlock;
     NVMDataBlock oldDataBlock;
     unsigned int threadId = 0;
+    bool two_addresses = 0;
     
     /* There are no more lines in the trace... Send back a "dummy" line */
     getline( trace, fullLine );
@@ -105,7 +107,7 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     {
         NVMAddress nAddress;
         nAddress.SetPhysicalAddress( 0xDEADC0DEDEADBEEFULL );
-        nextAccess->SetLine( nAddress, NOP, 0, dataBlock, oldDataBlock, 0 );
+        nextAccess->SetLine( nAddress, nAddress, NOP, 0, dataBlock, oldDataBlock, 0 );
         std::cout << "NVMainTraceReader: Reached EOF!" << std::endl;
         return false;
     }
@@ -127,8 +129,8 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     unsigned char fieldId = 0;
     
     /*
-     *  Again, the format is : CYCLE OP ADDRESS DATA THREADID
-     *  So the field ids are :   0    1    2      3      4
+     *  Again, the format is : CYCLE OP ADDRESS DATA THREADID  ADDRESS2
+     *  So the field ids are :   0    1    2      3      4        5
      */
     while( getline( lineStream, field, ' ' ) )
     {
@@ -142,6 +144,8 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
                     operation = READ;
                 else if( field == "W" )
                     operation = WRITE;
+                else if(field =="RC")
+                    operation = ROWCLONE;                    
                 else
                     std::cout << "Warning: Unknown operation `" 
                         << field << "'" << std::endl;
@@ -222,8 +226,16 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
             }
             else if( fieldId == 5 )
             {
-                assert( traceVersion != 0 );
-                threadId = atoi( field.c_str( ) );
+                if( traceVersion != 0 ){
+                    threadId = atoi( field.c_str( ) );
+                    break;
+                }
+                //handle ADDRESS 2 if it exists
+                
+                std::stringstream fmat;
+                fmat << std::hex << field;
+                fmat >> address2;
+                two_addresses = true;
             }
             
             fieldId++;
@@ -234,7 +246,7 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
 
     linenum++;
 
-    if( operation != READ && operation != WRITE )
+    if( operation != READ && operation != WRITE && operation != ROWCLONE)
         std::cout << "NVMainTraceReader: Unknown Operation: " << operation 
             << "Line number is " << linenum << ". Full Line is \"" << fullLine 
             << "\"" << std::endl;
@@ -242,11 +254,25 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     /*
      *  Set the line parameters.
      */
-    NVMAddress nAddress;
+    if (two_addresses){
+    	NVMAddress nAddress2;
+    	NVMAddress nAddress;
 
-    nAddress.SetPhysicalAddress( address );
+    	nAddress.SetPhysicalAddress( address );
+    	nAddress.SetPhysicalAddress( address2 );
 
-    nextAccess->SetLine( nAddress, operation, cycle, dataBlock, oldDataBlock, threadId );
+    	nextAccess->SetLine( nAddress, nAddress2, operation, cycle, dataBlock, oldDataBlock, threadId );
+
+    
+    } else{
+    	NVMAddress nAddress;
+
+    	nAddress.SetPhysicalAddress( address );
+
+        nextAccess->SetLine( nAddress, nAddress, operation, cycle, dataBlock, oldDataBlock, threadId );    
+    
+    }
+
 
     return true;
 }

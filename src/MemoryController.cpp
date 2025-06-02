@@ -1183,6 +1183,9 @@ bool MemoryController::FindCachedAddress( std::list<NVMainRequest *>& transactio
 
     for( it = transactionQueue.begin(); it != transactionQueue.end(); it++ )
     {
+        if((*it)->type == ROWCLONE)
+            continue;
+            
         ncounter_t queueId = GetCommandQueueId( (*it)->address );
         NVMainRequest *cachedRequest = MakeCachedRequest( (*it) );
         
@@ -1467,6 +1470,60 @@ bool MemoryController::DummyPredicate::operator() ( NVMainRequest* /*request*/ )
 {
     return true;
 }
+
+/**Issue PIM Commands (e.g., ROWCLONE)
+ * if bank is open then precharge
+ * then add to command queue 
+ * 
+ * 
+*/
+bool MemoryController::IssuePIMCommands( NVMainRequest *req )
+ {
+    bool rv = false;
+    ncounter_t rank, bank, row, subarray, col;
+    req->address.GetTranslatedAddress(&row, &col, &bank, &rank, NULL, &subarray);
+
+    ncounter_t rank2, bank2, row2, subarray2, col2;
+    req->address2.GetTranslatedAddress(&row2, &col2, &bank2, &rank2, NULL, &subarray2);
+
+    if(rank != rank2 || bank != bank2 || subarray != subarray2){
+        std::cout << "Physical Addresses: " << req->address.GetPhysicalAddress() << " | " << req->address2.GetPhysicalAddress() << "\n";
+        std::cout << "Translated Addresses: Ranks " << rank << " | " << rank2 << "\nBanks " << bank << " | " << bank2 << "\nSubarrays " << subarray << " | " << subarray2 << "\n";
+        std::cout << "PIM commands not in same subarray! - throwing exception in src/MemoryController.cpp" << std::endl;
+        //Give the opportunity to attach a debugger here.
+        #ifndef NDEBUG
+            raise( SIGSTOP );
+        #endif
+            GetStats( )->PrintAll( std::cerr );
+            exit(1);
+    }
+
+    ncounter_t queueId = GetCommandQueueId(req->address);
+    //if already active and not correct row then close
+    if( activeSubArray[rank][bank][subarray] && effectiveRow[rank][bank][subarray] != row )
+        commandQueues[queueId].push_back( MakePrechargeRequest( req ) );
+
+    //add activate 
+    commandQueues[queueId].push_back( MakeActivateRequest( row2, col2, bank2, rank2, subarray2 ));
+    //add request
+    commandQueues[queueId].push_back( req );
+    //add precharge
+    commandQueues[queueId].push_back( MakePrechargeRequest( req ) );
+
+    //INTER_BANK ROWCLONE
+    //add activate for add
+    //add activate for add2
+    //add request (ALL THIS DOES IS ADD BUS TIMING AND ENERGY TO SUBARRAY OR MAYBE SHOULD BE HANDLED IN INTERCONNECT: ONCHIP BUS)
+    //add precharge for add
+    //add precharge for add2
+
+    rv = true;
+    //add precharge
+    //schedule wakeup command
+    if( rv == true )
+        ScheduleCommandWake( );
+    return rv;
+ }
 
 
 /*

@@ -180,7 +180,7 @@ bool PostTrace::IssueCommand( NVMainRequest *request )
 
         TraceLine tl;
 
-        tl.SetLine( request->address,
+        tl.SetLine( request->address, request->address2,
                     #if TU_DORTMUND
                     request->programCounter,
                     #endif

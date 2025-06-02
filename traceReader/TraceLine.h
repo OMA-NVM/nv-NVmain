@@ -45,7 +45,7 @@ class TraceLine {
     TraceLine();
     ~TraceLine();
 
-    void SetLine(NVMAddress& addr, 
+    void SetLine(NVMAddress& addr, NVMAddress& addr2,
                  #if TU_DORTMUND
                  uint64_t pc,
                  #endif
@@ -54,6 +54,7 @@ class TraceLine {
                  ncounters_t threadId);
 
     NVMAddress& GetAddress();
+    NVMAddress& GetAddress2( );
     #if TU_DORTMUND
     uint64_t get_program_counter();
     #endif
@@ -65,6 +66,7 @@ class TraceLine {
 
    private:
     NVMAddress address;
+    NVMAddress address2;
     #if TU_DORTMUND
     uint64_t program_counter;
     #endif

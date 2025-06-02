@@ -33,7 +33,6 @@ import os, sys
 import subprocess
 
 from os.path import basename
-from gem5_scons import Transform
 
 
 HG_COMMAND = 'hg'
@@ -52,7 +51,14 @@ Import('*')
 
 #     env.Append(CPPPATH=Dir('.'))
 
+if 'EXTRAS' not in env:
+    env['EXTRAS'] = ''
+
+# Debugging output
+print("EXTRAS:", env['EXTRAS'])
+
 if "nvmain" in env['EXTRAS'].lower() and not 'NVMAIN_BUILD' in env:
+    from gem5_scons import Transform
     print("Here we define NVMainSource.")
     def NVMainSource(src):
         return Source(src)
@@ -97,4 +103,3 @@ elif "NVMAINPATH" in os.environ:
 else:
     print("ERROR: What kind of build is this?")
     sys.exit(1)
-

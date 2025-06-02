@@ -130,12 +130,13 @@ class StandardRank : public Rank
     ncounter_t actWaitTotal;
     double actWaitAverage;
 
-    ncounter_t reads, writes;
+    ncounter_t reads, writes, rowclones;
 
     double totalEnergy, backgroundEnergy, activateEnergy, burstEnergy, refreshEnergy;
     double totalPower, backgroundPower, activatePower, burstPower, refreshPower;
 
     bool Activate( NVMainRequest *request );
+    bool Rowclone( NVMainRequest *request );
     bool Read( NVMainRequest *request );
     bool Write( NVMainRequest *request );
     bool Precharge( NVMainRequest *request );

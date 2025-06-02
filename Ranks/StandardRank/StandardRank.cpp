@@ -67,7 +67,8 @@ StandardRank::StandardRank( )
 
     reads = 0;
     writes = 0;
-
+    rowclones = 0;
+    
     actWaits = 0;
     actWaitTotal = 0;
     actWaitAverage = 0.0;
@@ -215,7 +216,8 @@ void StandardRank::RegisterStats( )
 
     AddStat(reads);
     AddStat(writes);
-
+    AddStat(rowclones);
+    
     AddStat(activeCycles);
     AddStat(standbyCycles);
     AddStat(fastExitActiveCycles);
@@ -248,6 +250,40 @@ bool StandardRank::Idle( )
     }
 
     return rankIdle;
+}
+
+bool StandardRank::Rowclone( NVMainRequest *request )
+{
+    uint64_t activateBank;
+
+    request->address.GetTranslatedAddress( NULL, NULL, &activateBank, NULL, NULL, NULL );
+
+    if( activateBank >= bankCount )
+    {
+        std::cerr << "Rank: Attempted to activate non-existant bank " << activateBank << std::endl;
+        return false;
+    }
+    if ( state == STANDARDRANK_CLOSED ){
+        std::cerr << "Rank: attempted to overlap activate on closed rank " << std::endl;
+    }
+    /*
+     *  Ensure that the time since the last bank activation is >= tRRD. This is to limit
+     *  power consumption.
+     */
+
+    //dont check activate timing prior because we should always go right after previous activate 
+    
+    /* issue ACTIVATE to target bank */
+    GetChild( request )->IssueCommand( request );
+
+    /* move to the next counter */
+    RAWindex = (RAWindex + 1) % rawNum;
+    lastActivate[RAWindex] = GetEventQueue()->GetCurrentCycle();
+    nextActivate = MAX( nextActivate, 
+                        GetEventQueue()->GetCurrentCycle() + p->tRRDR);
+
+    rowclones++;
+    return true;
 }
 
 bool StandardRank::Activate( NVMainRequest *request )
@@ -613,7 +649,7 @@ ncycle_t StandardRank::NextIssuable( NVMainRequest *request )
 
     request->address.GetTranslatedAddress( NULL, NULL, &bank, NULL, NULL, NULL );
 
-    if( request->type == ACTIVATE || request->type == REFRESH ) nextCompare = MAX( nextActivate, lastActivate[(RAWindex+1)%rawNum] + p->tRAW );
+    if( request->type == ACTIVATE || request->type == REFRESH || request->type == ROWCLONE) nextCompare = MAX( nextActivate, lastActivate[(RAWindex+1)%rawNum] + p->tRAW );
     else if( request->type == READ || request->type == READ_PRECHARGE ) nextCompare = nextRead;
     else if( request->type == WRITE || request->type == WRITE_PRECHARGE ) nextCompare = nextWrite;
     else if( request->type == PRECHARGE || request->type == PRECHARGE_ALL ) nextCompare = nextPrecharge;
@@ -670,6 +706,10 @@ bool StandardRank::IsIssuable( NVMainRequest *req, FailReason *reason )
                     p->tRAW - GetEventQueue( )->GetCurrentCycle( ) );
             }
         }
+    }
+    else if( req->type == ROWCLONE)
+    {
+        rv = GetChild( req )->IsIssuable(req, reason);
     }
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
@@ -788,7 +828,9 @@ bool StandardRank::IssueCommand( NVMainRequest *req )
             case READ_PRECHARGE:
                 rv = this->Read( req );
                 break;
-            
+            case ROWCLONE:
+                rv = this->Rowclone( req );
+                break;
             case WRITE:
             case WRITE_PRECHARGE:
                 rv = this->Write( req );
