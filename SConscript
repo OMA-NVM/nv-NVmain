@@ -57,6 +57,12 @@ if 'EXTRAS' not in env:
 # Debugging output
 print("EXTRAS:", env['EXTRAS'])
 
+vars = Variables()
+vars.Add('MEM_SUBSYSTEM', 
+         'Select memory subsystem (0, 1, 2...)', 
+         0)   # default value
+vars.Update(env)  # load MEM_SUBSYSTEM into env
+
 # Optional guard to enable MEM_SUBSYSTEM specific code paths.
 # Set on the scons command line with e.g. MEM_SUBSYSTEM=1.
 if int(env['MEM_SUBSYSTEM']) == 1:
