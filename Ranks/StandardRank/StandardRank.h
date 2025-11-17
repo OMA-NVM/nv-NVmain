@@ -130,13 +130,19 @@ class StandardRank : public Rank
     ncounter_t actWaitTotal;
     double actWaitAverage;
 
+#ifdef MEM_SUBSYSTEM
     ncounter_t reads, writes, rowclones;
+#else
+    ncounter_t reads, writes;
+#endif
 
     double totalEnergy, backgroundEnergy, activateEnergy, burstEnergy, refreshEnergy;
     double totalPower, backgroundPower, activatePower, burstPower, refreshPower;
 
     bool Activate( NVMainRequest *request );
+#ifdef MEM_SUBSYSTEM
     bool Rowclone( NVMainRequest *request );
+#endif
     bool Read( NVMainRequest *request );
     bool Write( NVMainRequest *request );
     bool Precharge( NVMainRequest *request );

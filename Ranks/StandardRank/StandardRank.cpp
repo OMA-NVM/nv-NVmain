@@ -67,7 +67,9 @@ StandardRank::StandardRank( )
 
     reads = 0;
     writes = 0;
+#ifdef MEM_SUBSYSTEM
     rowclones = 0;
+#endif
     
     actWaits = 0;
     actWaitTotal = 0;
@@ -216,7 +218,9 @@ void StandardRank::RegisterStats( )
 
     AddStat(reads);
     AddStat(writes);
+#ifdef MEM_SUBSYSTEM
     AddStat(rowclones);
+#endif
     
     AddStat(activeCycles);
     AddStat(standbyCycles);
@@ -252,6 +256,7 @@ bool StandardRank::Idle( )
     return rankIdle;
 }
 
+#ifdef MEM_SUBSYSTEM
 bool StandardRank::Rowclone( NVMainRequest *request )
 {
     uint64_t activateBank;
@@ -285,6 +290,7 @@ bool StandardRank::Rowclone( NVMainRequest *request )
     rowclones++;
     return true;
 }
+#endif
 
 bool StandardRank::Activate( NVMainRequest *request )
 {
@@ -649,7 +655,11 @@ ncycle_t StandardRank::NextIssuable( NVMainRequest *request )
 
     request->address.GetTranslatedAddress( NULL, NULL, &bank, NULL, NULL, NULL );
 
-    if( request->type == ACTIVATE || request->type == REFRESH || request->type == ROWCLONE) nextCompare = MAX( nextActivate, lastActivate[(RAWindex+1)%rawNum] + p->tRAW );
+    if( request->type == ACTIVATE || request->type == REFRESH
+#ifdef MEM_SUBSYSTEM
+        || request->type == ROWCLONE
+#endif
+        ) nextCompare = MAX( nextActivate, lastActivate[(RAWindex+1)%rawNum] + p->tRAW );
     else if( request->type == READ || request->type == READ_PRECHARGE ) nextCompare = nextRead;
     else if( request->type == WRITE || request->type == WRITE_PRECHARGE ) nextCompare = nextWrite;
     else if( request->type == PRECHARGE || request->type == PRECHARGE_ALL ) nextCompare = nextPrecharge;
@@ -707,10 +717,12 @@ bool StandardRank::IsIssuable( NVMainRequest *req, FailReason *reason )
             }
         }
     }
+#ifdef MEM_SUBSYSTEM
     else if( req->type == ROWCLONE)
     {
         rv = GetChild( req )->IsIssuable(req, reason);
     }
+#endif
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
         if( nextRead > GetEventQueue( )->GetCurrentCycle( ) )
@@ -828,9 +840,11 @@ bool StandardRank::IssueCommand( NVMainRequest *req )
             case READ_PRECHARGE:
                 rv = this->Read( req );
                 break;
+#ifdef MEM_SUBSYSTEM
             case ROWCLONE:
                 rv = this->Rowclone( req );
                 break;
+#endif
             case WRITE:
             case WRITE_PRECHARGE:
                 rv = this->Write( req );
@@ -1071,4 +1085,3 @@ void StandardRank::ResetStats( )
 {
     lastReset = GetEventQueue()->GetCurrentCycle();
 }
-

@@ -88,7 +88,9 @@ class NVMain : public NVMObject
 
     ncounter_t totalReadRequests;
     ncounter_t totalWriteRequests;
+#ifdef MEM_SUBSYSTEM
     ncounter_t totalPIMRequests;
+#endif
     ncounter_t successfulPrefetches;
     ncounter_t unsuccessfulPrefetches;
 

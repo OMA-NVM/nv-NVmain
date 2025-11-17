@@ -96,7 +96,11 @@ class FRFCFS_WQF : public MemoryController
     double   average_read_spacing;
     double   average_predrain_readqueue_size;
     double   average_reads_during_drain;
-    uint64_t mem_reads, mem_writes;
+    uint64_t mem_reads, mem_writes
+#ifdef MEM_SUBSYSTEM
+    , mem_rowclones
+#endif
+    ;
     uint64_t starvation_precharges;
     uint64_t rq_rb_hits;
     uint64_t rq_rb_miss;

@@ -67,7 +67,9 @@ FRFCFS::FRFCFS( )
 
     mem_reads = 0;
     mem_writes = 0;
+#ifdef MEM_SUBSYSTEM
     mem_rowclones = 0;
+#endif
 
     rb_hits = 0;
     rb_miss = 0;
@@ -110,7 +112,9 @@ void FRFCFS::RegisterStats( )
 {
     AddStat(mem_reads);
     AddStat(mem_writes);
+#ifdef MEM_SUBSYSTEM
     AddStat(mem_rowclones);
+#endif
     AddStat(rb_hits);
     AddStat(rb_miss);
     AddStat(starvation_precharges);
@@ -163,8 +167,10 @@ bool FRFCFS::IssueCommand( NVMainRequest *req )
         mem_reads++;
     } else if(req->type == WRITE) {
         mem_writes++;
+#ifdef MEM_SUBSYSTEM
     } else if(req->type == ROWCLONE){
         mem_rowclones++;
+#endif
     }
 
     /*
@@ -263,10 +269,13 @@ void FRFCFS::Cycle( ncycle_t steps )
 
     /* Issue the commands for this transaction. */
     if( nextRequest != NULL )
-    {   //handle PUM commands 
+    {
+#ifdef MEM_SUBSYSTEM
+        //handle PUM commands 
         if (nextRequest->type == ROWCLONE)
             IssuePIMCommands( nextRequest );
         else
+#endif
             IssueMemoryCommands( nextRequest );
     }
 
@@ -280,6 +289,5 @@ void FRFCFS::CalculateStats( )
 {
     MemoryController::CalculateStats( );
 }
-
 
 

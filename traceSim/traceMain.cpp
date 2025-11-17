@@ -233,10 +233,12 @@ int TraceMain::RunTrace( int argc, char *argv[] )
         request->status = MEM_REQUEST_INCOMPLETE;
         request->owner = (NVMObject *)this;
         
+#ifdef MEM_SUBSYSTEM
         if(request->type == ROWCLONE)
         {
             request->address2 = tl->GetAddress2( );
         }
+#endif
         
         /* 
          * If you want to ignore the cycles used in the trace file, just set
@@ -244,10 +246,21 @@ int TraceMain::RunTrace( int argc, char *argv[] )
          */
         if( config->KeyExists( "IgnoreTraceCycle" ) 
                 && config->GetString( "IgnoreTraceCycle" ) == "true" )
+        {
+#ifdef MEM_SUBSYSTEM
             tl->SetLine( tl->GetAddress( ), tl->GetAddress2( ), tl->GetOperation( ), 0, 
                          tl->GetData( ), tl->GetOldData( ), tl->GetThreadId( ) );
+#else
+            tl->SetLine( tl->GetAddress( ), tl->GetOperation( ), 0, 
+                         tl->GetData( ), tl->GetOldData( ), tl->GetThreadId( ) );
+#endif
+        }
 
+#ifdef MEM_SUBSYSTEM
         if( request->type != READ && request->type != WRITE && request->type != ROWCLONE )
+#else
+        if( request->type != READ && request->type != WRITE )
+#endif
             std::cout << "traceMain: Unknown Operation: " << request->type 
                 << std::endl;
 
@@ -336,5 +349,4 @@ bool TraceMain::RequestComplete( NVMainRequest* request )
 
     return true;
 }
-
 

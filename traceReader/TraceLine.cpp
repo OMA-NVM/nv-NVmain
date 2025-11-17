@@ -41,7 +41,9 @@ TraceLine::TraceLine() {
      *  the memory simulator before it is set by the trace reader.
      */
     address.SetPhysicalAddress(0xDEADC0DE0BADC0DEULL);
+#ifdef MEM_SUBSYSTEM
     address2.SetPhysicalAddress(0xDEADC0DE0BADC0DEULL);
+#endif
     operation = NOP;
     cycle = 0;
     threadId = 0;
@@ -53,13 +55,18 @@ TraceLine::~TraceLine( )
 }
 
 /* Set the values of the address and memory operation. */
-void TraceLine::SetLine(NVMAddress& addr, NVMAddress& addr2,
+void TraceLine::SetLine(NVMAddress& addr,
+#ifdef MEM_SUBSYSTEM
+ NVMAddress& addr2,
+#endif
 #if TU_DORTMUND
  uint64_t pc,
 #endif
  OpType op, ncycle_t cy, NVMDataBlock& data, NVMDataBlock& oldData, ncounters_t threadId) {
     this->address = addr;
+#ifdef MEM_SUBSYSTEM
     this->address2 = addr2;
+#endif
     #if TU_DORTMUND
     this->program_counter = pc;
     #endif
@@ -73,10 +80,12 @@ void TraceLine::SetLine(NVMAddress& addr, NVMAddress& addr2,
 /* Get the address of the memory operation. */
 NVMAddress& TraceLine::GetAddress() { return address; }
 
+#ifdef MEM_SUBSYSTEM
 NVMAddress& TraceLine::GetAddress2( )
 {
     return address2;
 }
+#endif
 
 #if TU_DORTMUND
 /* Get the address of the memory operation. */

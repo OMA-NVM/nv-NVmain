@@ -204,7 +204,9 @@ class MemoryController : public NVMObject
     bool FindRowBufferHits( std::list<NVMainRequest *>& transactionQueue, std::vector<NVMainRequest *>& hitRequests, NVM::SchedulingPredicate& p  );
     bool FindOldestReadyRequests( std::list<NVMainRequest *>& transactionQueue, std::vector<NVMainRequest *>& oldestRequests, NVM::SchedulingPredicate& p  );
     bool FindClosedBankRequests( std::list<NVMainRequest *>& transactionQueue, std::vector<NVMainRequest *>& closedRequests, NVM::SchedulingPredicate& p  );
+#ifdef MEM_SUBSYSTEM
      bool IssuePIMCommands( NVMainRequest *req );
+#endif
 
     /* IsLastRequest() tells whether no other request has the row buffer hit in the transaction queue */
     virtual bool IsLastRequest( std::list<NVMainRequest *>& transactionQueue, NVMainRequest *request); 

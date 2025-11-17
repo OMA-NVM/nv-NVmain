@@ -48,7 +48,9 @@ enum OpType
     NOP = 0,        /* No Operation */
     ACTIVATE,       /* a.k.a. RAS */
     READ,           /* a.k.a. CAS-R */ 
+#ifdef MEM_SUBSYSTEM
     ROWCLONE,
+#endif
     READ_PRECHARGE, /* CAS-R with implicit PRECHARGE */ 
     WRITE,          /* a.k.a. CAS-W */  
     WRITE_PRECHARGE,/* CAS-W with implicit PRECHARGE */ 
@@ -143,7 +145,9 @@ class NVMainRequest
     };
 
     NVMAddress address;            //< Address of request
+#ifdef MEM_SUBSYSTEM
     NVMAddress address2;           // Address of ROWCLONE destination   
+#endif
     OpType type;                   //< Operation type of request (read, write, etc)
     BulkCommand bulkCmd;           //< Bulk Commands (i.e., Read+Precharge, Write+Precharge, etc)
     ncounters_t threadId;                  //< Thread ID of issuing application
@@ -190,6 +194,9 @@ inline
 const NVMainRequest& NVMainRequest::operator=( const NVMainRequest& m )
 {
     address = m.address;
+#ifdef MEM_SUBSYSTEM
+    address2 = m.address2;
+#endif
     type = m.type;
     bulkCmd = m.bulkCmd;
     threadId = m.threadId;

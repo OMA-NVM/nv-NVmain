@@ -1183,8 +1183,10 @@ bool MemoryController::FindCachedAddress( std::list<NVMainRequest *>& transactio
 
     for( it = transactionQueue.begin(); it != transactionQueue.end(); it++ )
     {
+#ifdef MEM_SUBSYSTEM
         if((*it)->type == ROWCLONE)
             continue;
+#endif
             
         ncounter_t queueId = GetCommandQueueId( (*it)->address );
         NVMainRequest *cachedRequest = MakeCachedRequest( (*it) );
@@ -1471,6 +1473,7 @@ bool MemoryController::DummyPredicate::operator() ( NVMainRequest* /*request*/ )
     return true;
 }
 
+#ifdef MEM_SUBSYSTEM
 /**Issue PIM Commands (e.g., ROWCLONE)
  * if bank is open then precharge
  * then add to command queue 
@@ -1524,6 +1527,7 @@ bool MemoryController::IssuePIMCommands( NVMainRequest *req )
         ScheduleCommandWake( );
     return rv;
  }
+#endif
 
 
 /*

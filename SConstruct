@@ -13,6 +13,10 @@ AddOption('--build-type', dest='build_type', type='choice',
           choices=["debug","fast","prof"],
           help='Type of build. Determines compiler flags')
 
+vars = Variables()
+vars.Add('MEM_SUBSYSTEM', 
+         'Select memory subsystem (0, 1, 2...)', 
+         0)   # default value
 
 #
 #  Setup the default build environment.
@@ -22,6 +26,7 @@ AddOption('--build-type', dest='build_type', type='choice',
 env = Environment(ENV = os.environ)
 env.Append(CC='-9')
 env.Append(CXX='-9')
+vars.Update(env)  # load MEM_SUBSYSTEM into env
 
 build_type = GetOption("build_type")
 

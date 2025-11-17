@@ -95,11 +95,15 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     unsigned int cycle = 0;
     OpType operation = READ;
     uint64_t address;
+#ifdef MEM_SUBSYSTEM
     uint64_t address2;
+#endif
     NVMDataBlock dataBlock;
     NVMDataBlock oldDataBlock;
     unsigned int threadId = 0;
+#ifdef MEM_SUBSYSTEM
     bool two_addresses = 0;
+#endif
     
     /* There are no more lines in the trace... Send back a "dummy" line */
     getline( trace, fullLine );
@@ -107,7 +111,11 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     {
         NVMAddress nAddress;
         nAddress.SetPhysicalAddress( 0xDEADC0DEDEADBEEFULL );
+#ifdef MEM_SUBSYSTEM
         nextAccess->SetLine( nAddress, nAddress, NOP, 0, dataBlock, oldDataBlock, 0 );
+#else
+        nextAccess->SetLine( nAddress, NOP, 0, dataBlock, oldDataBlock, 0 );
+#endif
         std::cout << "NVMainTraceReader: Reached EOF!" << std::endl;
         return false;
     }
@@ -144,8 +152,10 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
                     operation = READ;
                 else if( field == "W" )
                     operation = WRITE;
+#ifdef MEM_SUBSYSTEM
                 else if(field =="RC")
                     operation = ROWCLONE;                    
+#endif
                 else
                     std::cout << "Warning: Unknown operation `" 
                         << field << "'" << std::endl;
@@ -226,6 +236,7 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
             }
             else if( fieldId == 5 )
             {
+#ifdef MEM_SUBSYSTEM
                 if( traceVersion != 0 ){
                     threadId = atoi( field.c_str( ) );
                     break;
@@ -236,6 +247,10 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
                 fmat << std::hex << field;
                 fmat >> address2;
                 two_addresses = true;
+#else
+                assert( traceVersion != 0 );
+                threadId = atoi( field.c_str( ) );
+#endif
             }
             
             fieldId++;
@@ -246,7 +261,11 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
 
     linenum++;
 
-    if( operation != READ && operation != WRITE && operation != ROWCLONE)
+    if( operation != READ && operation != WRITE
+#ifdef MEM_SUBSYSTEM
+        && operation != ROWCLONE
+#endif
+        )
         std::cout << "NVMainTraceReader: Unknown Operation: " << operation 
             << "Line number is " << linenum << ". Full Line is \"" << fullLine 
             << "\"" << std::endl;
@@ -254,6 +273,7 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     /*
      *  Set the line parameters.
      */
+#ifdef MEM_SUBSYSTEM
     if (two_addresses){
     	NVMAddress nAddress2;
     	NVMAddress nAddress;
@@ -272,6 +292,13 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
         nextAccess->SetLine( nAddress, nAddress, operation, cycle, dataBlock, oldDataBlock, threadId );    
     
     }
+#else
+    NVMAddress nAddress;
+
+    nAddress.SetPhysicalAddress( address );
+
+    nextAccess->SetLine( nAddress, operation, cycle, dataBlock, oldDataBlock, threadId );
+#endif
 
 
     return true;

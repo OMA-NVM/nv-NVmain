@@ -57,6 +57,12 @@ if 'EXTRAS' not in env:
 # Debugging output
 print("EXTRAS:", env['EXTRAS'])
 
+# Optional guard to enable MEM_SUBSYSTEM specific code paths.
+# Set on the scons command line with e.g. MEM_SUBSYSTEM=1.
+if int(env['MEM_SUBSYSTEM']) == 1:
+    print("Using memory subsystem 1")
+    env.Append(CPPDEFINES=['MEM_SUBSYSTEM'])
+
 if "nvmain" in env['EXTRAS'].lower() and not 'NVMAIN_BUILD' in env:
     from gem5_scons import Transform
     print("Here we define NVMainSource.")

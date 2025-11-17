@@ -117,7 +117,9 @@ SubArray::SubArray( )
     activates = 0;
     precharges = 0;
     refreshes = 0;
+#ifdef MEM_SUBSYSTEM
     rowclones = 0;    
+#endif
 
     actWaits = 0;
     actWaitTotal = 0;
@@ -245,7 +247,9 @@ void SubArray::RegisterStats( )
     AddStat(activates);
     AddStat(precharges);
     AddStat(refreshes);
+#ifdef MEM_SUBSYSTEM
     AddStat(rowclones);    
+#endif
 
     if( endrModel )
     {
@@ -357,6 +361,7 @@ bool SubArray::Activate( NVMainRequest *request )
     return true;
 }
 
+#ifdef MEM_SUBSYSTEM
 /**
  * Perfrom overlapped activate on an open subarray
 */
@@ -419,6 +424,7 @@ bool SubArray::Rowclone( NVMainRequest *request ){
 
     return true;
 }
+#endif
 
 /*
  * Read() fulfills the column read function
@@ -1208,6 +1214,7 @@ bool SubArray::IsIssuable( NVMainRequest *req, FailReason *reason )
             }
         }
     }
+#ifdef MEM_SUBSYSTEM
     else if ( req->type == ROWCLONE)
     {
         if( state != SUBARRAY_OPEN  /* the subarray is not active */
@@ -1218,6 +1225,7 @@ bool SubArray::IsIssuable( NVMainRequest *req, FailReason *reason )
                 reason->reason = SUBARRAY_TIMING;
         }
     }    
+#endif
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
         if( nextRead > (GetEventQueue()->GetCurrentCycle()) /* if it is too early to read */
@@ -1318,9 +1326,11 @@ bool SubArray::IssueCommand( NVMainRequest *req )
             case READ_PRECHARGE:
                 rv = this->Read( req );
                 break;
+#ifdef MEM_SUBSYSTEM
             case ROWCLONE:
                 rv = this->Rowclone( req );
                 break;            
+#endif
             case WRITE:
             case WRITE_PRECHARGE:
                 rv = this->Write( req );

@@ -88,6 +88,9 @@ FRFCFS_WQF::FRFCFS_WQF( ) : readQueueId(0), writeQueueId(1)
 
     mem_reads = 0;
     mem_writes = 0;
+#ifdef MEM_SUBSYSTEM
+    mem_rowclones = 0;
+#endif
     rq_rb_hits = 0;
     rq_rb_miss = 0;
     wq_rb_hits = 0;
@@ -180,6 +183,9 @@ void FRFCFS_WQF::RegisterStats( )
 {
     AddStat(mem_reads);
     AddStat(mem_writes);
+#ifdef MEM_SUBSYSTEM
+    AddStat(mem_rowclones);
+#endif
     AddStat(rq_rb_hits);
     AddStat(rq_rb_miss);
     AddStat(wq_rb_hits);
@@ -264,10 +270,14 @@ bool FRFCFS_WQF::IssueCommand( NVMainRequest *request )
 
         mem_writes++;
     }
-    else
+#ifdef MEM_SUBSYSTEM
+    else if(request->type == ROWCLONE)
     {
-        return false;
+        Enqueue( readQueueId, request );
+        mem_rowclones++;
+    
     }
+#endif
 
     return true;
 }
@@ -497,11 +507,21 @@ void FRFCFS_WQF::Cycle( ncycle_t steps )
     /* Issue the memory transaction as a series of commands to the command queue. */
     if( nextRequest != NULL )
     {
-        /* If we are draining, do not allow write cancellation or pausing. */
-        if( m_draining == true || force_drain == true )
-            nextRequest->flags |= NVMainRequest::FLAG_FORCED;
+#ifdef MEM_SUBSYSTEM
+        //handle PUM commands 
+        if (nextRequest->type == ROWCLONE) 
+        {
+            IssuePIMCommands( nextRequest );
+        } else {
+#endif
+            /* If we are draining, do not allow write cancellation or pausing. */
+            if( m_draining == true || force_drain == true )
+                nextRequest->flags |= NVMainRequest::FLAG_FORCED;
 
-        IssueMemoryCommands( nextRequest );
+            IssueMemoryCommands( nextRequest );
+#ifdef MEM_SUBSYSTEM
+        }
+#endif
     }
 
     /* Issue memory commands from the command queue. */
@@ -540,4 +560,3 @@ bool FRFCFS_WQF::Drain( )
 
     return true;
 }
-

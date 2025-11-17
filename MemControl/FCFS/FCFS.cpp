@@ -64,6 +64,9 @@ FCFS::FCFS( )
 
     mem_reads = 0;
     mem_writes = 0;
+#ifdef MEM_SUBSYSTEM
+    mem_rowclones = 0;
+#endif
 
     rb_hits = 0;
     rb_miss = 0;
@@ -89,6 +92,9 @@ void FCFS::RegisterStats( )
 {
     AddStat(mem_reads);
     AddStat(mem_writes);
+#ifdef MEM_SUBSYSTEM
+    AddStat(mem_rowclones);
+#endif
     AddStat(rb_hits);
     AddStat(rb_miss);
     AddStat(averageLatency);
@@ -161,10 +167,16 @@ bool FCFS::IssueCommand( NVMainRequest *request )
     if( !IsIssuable( request ) )
         return false;
 
-    if( request->type == READ )
+    if( request->type == READ ){
         mem_reads++;
-    else
+    } else if(request->type == WRITE) {
         mem_writes++;
+#ifdef MEM_SUBSYSTEM
+    } else if(request->type == ROWCLONE){
+        mem_rowclones++;
+#endif
+    }
+
 
     Enqueue( 0, request );
 
@@ -187,9 +199,15 @@ void FCFS::Cycle( ncycle_t steps )
 
     if( nextReq != NULL )
     {
-        IssueMemoryCommands( nextReq );
+#ifdef MEM_SUBSYSTEM
+        //handle PUM commands 
+        if (nextReq->type == ROWCLONE)
+            IssuePIMCommands( nextReq );
+        else
+#endif
+            IssueMemoryCommands( nextReq );
     }
-
+    
     CycleCommandQueues( );
 
     MemoryController::Cycle( steps );
@@ -199,4 +217,3 @@ void FCFS::CalculateStats( )
 {
     MemoryController::CalculateStats( );
 }
-

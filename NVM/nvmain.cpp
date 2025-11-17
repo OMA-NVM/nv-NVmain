@@ -62,7 +62,9 @@ NVMain::NVMain( )
 
     totalReadRequests = 0;
     totalWriteRequests = 0;
+#ifdef MEM_SUBSYSTEM
     totalPIMRequests = 0;
+#endif
 
     prefetcher = NULL;
     successfulPrefetches = 0;
@@ -363,7 +365,10 @@ void NVMain::PrintPreTrace( NVMainRequest *request )
     {
         TraceLine tl;
 
-        tl.SetLine( request->address, request->address2,
+        tl.SetLine( request->address,
+#ifdef MEM_SUBSYSTEM
+                request->address2,
+#endif
             #if TU_DORTMUND
              request->programCounter,
             #endif
@@ -414,6 +419,7 @@ bool NVMain::IssueCommand( NVMainRequest *request )
         {
             totalReadRequests++;
         } 
+#ifdef MEM_SUBSYSTEM
         else if(request->type == ROWCLONE)
         {
             /* Translate address 2 for RC */
@@ -422,11 +428,12 @@ bool NVMain::IssueCommand( NVMainRequest *request )
             request->address2.SetTranslatedAddress( row, col, bank, rank, channel, subarray );
             totalPIMRequests++;
         }
+#endif
         else
         {
             totalWriteRequests++;
         }
-        
+
 
         PrintPreTrace( request );
     }
@@ -466,10 +473,12 @@ bool NVMain::IssueAtomic( NVMainRequest *request )
         {
             totalReadRequests++;
         }
+#ifdef MEM_SUBSYSTEM
         else if(request->type == ROWCLONE)
         {
             totalPIMRequests++;
         }
+#endif
         else
         {
             totalWriteRequests++;
@@ -541,7 +550,9 @@ void NVMain::RegisterStats( )
 {
     AddStat(totalReadRequests);
     AddStat(totalWriteRequests);
+#ifdef MEM_SUBSYSTEM
     AddStat(totalPIMRequests);
+#endif
     AddStat(successfulPrefetches);
     AddStat(unsuccessfulPrefetches);
 }
@@ -556,4 +567,3 @@ void NVMain::EnqueuePendingMemoryRequests( NVMainRequest *req )
 {
     pendingMemoryRequests.push(req);
 }
-
