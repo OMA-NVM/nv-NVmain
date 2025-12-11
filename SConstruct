@@ -19,8 +19,8 @@ AddOption('--build-type', dest='build_type', type='choice',
 #  e.g., release, debug, profiling, etc.
 #
 env = Environment(ENV = os.environ)
-env.Append(CC='-9')
-env.Append(CXX='-9')
+#env.Append(CC='-9')
+#env.Append(CXX='-9')
 
 
 build_type = GetOption("build_type")
