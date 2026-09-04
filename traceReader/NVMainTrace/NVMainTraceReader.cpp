@@ -279,7 +279,7 @@ bool NVMainTraceReader::GetNextAccess( TraceLine *nextAccess )
     	NVMAddress nAddress;
 
     	nAddress.SetPhysicalAddress( address );
-    	nAddress.SetPhysicalAddress( address2 );
+    	nAddress2.SetPhysicalAddress( address2 );
 
     	nextAccess->SetLine( nAddress, nAddress2, operation, cycle, dataBlock, oldDataBlock, threadId );
 
