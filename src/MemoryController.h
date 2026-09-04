@@ -132,6 +132,17 @@ class MemoryController : public NVMObject
     ncounter_t psInterval;
     ncycle_t lastCommandWake;
     ncounter_t wakeupCount;
+#ifdef MEM_SUBSYSTEM
+    /* How each RowClone was satisfied -- see IssuePIMCommands(). */
+    ncounter_t rowclone_fpm;
+    ncounter_t rowclone_psm_bank;
+    ncounter_t rowclone_psm_subarray;
+    ncounter_t rowclone_unsupported;
+    ncounter_t psm_transfers;
+    /* Staging row used when RowClone-PSM has to hop through a third bank. */
+    ncounter_t psmTempRow;
+    ncounter_t psmTempSubArray;
+#endif
     ncycle_t lastIssueCycle;
 
     std::list<NVMainRequest *> *transactionQueues;
@@ -178,6 +189,21 @@ class MemoryController : public NVMObject
     NVMainRequest *MakePowerdownRequest( OpType pdOp,
                                          const ncounter_t rank );
     NVMainRequest *MakePowerupRequest( const ncounter_t rank );
+#ifdef MEM_SUBSYSTEM
+    NVMainRequest *MakeTransferRequest( const ncounter_t srcRow, const ncounter_t srcCol,
+                                        const ncounter_t srcBank, const ncounter_t srcSubArray,
+                                        const ncounter_t dstRow, const ncounter_t dstCol,
+                                        const ncounter_t dstBank, const ncounter_t dstSubArray,
+                                        const ncounter_t rank );
+    void EmitPSMHop( const ncounter_t queueId, const ncounter_t rank,
+                     const ncounter_t srcRow, const ncounter_t srcBank, const ncounter_t srcSubArray,
+                     const ncounter_t dstRow, const ncounter_t dstBank, const ncounter_t dstSubArray,
+                     NVMainRequest *parent );
+    void MarkBankActivated( const ncounter_t rank, const ncounter_t bank,
+                            const ncounter_t subarray, const ncounter_t row );
+    void MarkBankPrecharged( const ncounter_t rank, const ncounter_t bank,
+                             const ncounter_t subarray );
+#endif
 
     bool FindStarvedRequest( std::list<NVMainRequest *>& transactionQueue, NVMainRequest **starvedRequest );
     bool FindCachedAddress( std::list<NVMainRequest *>& transactionQueue, NVMainRequest **accessibleRequest );

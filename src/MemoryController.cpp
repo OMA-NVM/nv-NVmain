@@ -64,6 +64,15 @@ MemoryController::MemoryController( )
 
     lastCommandWake = 0;
     wakeupCount = 0;
+#ifdef MEM_SUBSYSTEM
+    rowclone_fpm = 0;
+    rowclone_psm_bank = 0;
+    rowclone_psm_subarray = 0;
+    rowclone_unsupported = 0;
+    psm_transfers = 0;
+    psmTempRow = 0;
+    psmTempSubArray = 0;
+#endif
     lastIssueCycle = 0;
 
     starvationThreshold = 4;
@@ -305,6 +314,28 @@ void MemoryController::CleanupCallback( void * /*data*/ )
 
 bool MemoryController::RequestComplete( NVMainRequest *request )
 {
+#ifdef MEM_SUBSYSTEM
+    /*
+     *  A RowClone satisfied by PSM never reaches the devices itself -- it is
+     *  expanded into ACT/TRANSFER/PRE commands. The last TRANSFER of the
+     *  sequence carries the original request so we can retire it here.
+     */
+    if( request->type == TRANSFER
+        && ( request->flags & NVMainRequest::FLAG_TRANSFER_LAST )
+        && request->reqInfo != NULL )
+    {
+        NVMainRequest *parent = static_cast<NVMainRequest *>( request->reqInfo );
+
+        request->reqInfo = NULL;
+
+        parent->status = MEM_REQUEST_COMPLETE;
+        parent->completionCycle = GetEventQueue( )->GetCurrentCycle( );
+
+        /* Virtual, so this lands in the derived controller and records its stats. */
+        RequestComplete( parent );
+    }
+#endif
+
     //if( request->type == REFRESH )
     //    ProcessRefreshPulse( request );
     //else if( request->owner == this )
@@ -418,6 +449,18 @@ void MemoryController::SetConfig( Config *conf, bool createChildren )
     {
         subArrayNum = 1;
     }
+
+#ifdef MEM_SUBSYSTEM
+    /*
+     *  RowClone-PSM cannot move data between two subarrays of the same bank
+     *  directly, so it stages through a row in a third bank. That staging row is
+     *  clobbered by the copy and should be reserved by the allocator.
+     */
+    if( conf->KeyExists( "RowClonePSMTempRow" ) )
+        psmTempRow = static_cast<ncounter_t>( conf->GetValue( "RowClonePSMTempRow" ) );
+    if( conf->KeyExists( "RowClonePSMTempSubArray" ) )
+        psmTempSubArray = static_cast<ncounter_t>( conf->GetValue( "RowClonePSMTempSubArray" ) );
+#endif
 
     /* Determine number of command queues. Assume per-bank queues as this was the default for older nvmain versions. */
     queueModel = PerBankQueues;
@@ -560,6 +603,13 @@ void MemoryController::RegisterStats( )
 {
     AddStat(simulation_cycles);
     AddStat(wakeupCount);
+#ifdef MEM_SUBSYSTEM
+    AddStat(rowclone_fpm);
+    AddStat(rowclone_psm_bank);
+    AddStat(rowclone_psm_subarray);
+    AddStat(rowclone_unsupported);
+    AddStat(psm_transfers);
+#endif
 }
 
 /* 
@@ -1474,59 +1524,234 @@ bool MemoryController::DummyPredicate::operator() ( NVMainRequest* /*request*/ )
 }
 
 #ifdef MEM_SUBSYSTEM
-/**Issue PIM Commands (e.g., ROWCLONE)
- * if bank is open then precharge
- * then add to command queue 
- * 
- * 
-*/
-bool MemoryController::IssuePIMCommands( NVMainRequest *req )
- {
-    bool rv = false;
-    ncounter_t rank, bank, row, subarray, col;
-    req->address.GetTranslatedAddress(&row, &col, &bank, &rank, NULL, &subarray);
+NVMainRequest *MemoryController::MakeTransferRequest( const ncounter_t srcRow, const ncounter_t srcCol,
+                                                     const ncounter_t srcBank, const ncounter_t srcSubArray,
+                                                     const ncounter_t dstRow, const ncounter_t dstCol,
+                                                     const ncounter_t dstBank, const ncounter_t dstSubArray,
+                                                     const ncounter_t rank )
+{
+    NVMainRequest *transferRequest = new NVMainRequest( );
 
-    ncounter_t rank2, bank2, row2, subarray2, col2;
-    req->address2.GetTranslatedAddress(&row2, &col2, &bank2, &rank2, NULL, &subarray2);
+    transferRequest->type = TRANSFER;
 
-    if(rank != rank2 || bank != bank2 || subarray != subarray2){
-        std::cout << "Physical Addresses: " << req->address.GetPhysicalAddress() << " | " << req->address2.GetPhysicalAddress() << "\n";
-        std::cout << "Translated Addresses: Ranks " << rank << " | " << rank2 << "\nBanks " << bank << " | " << bank2 << "\nSubarrays " << subarray << " | " << subarray2 << "\n";
-        std::cout << "PIM commands not in same subarray! - throwing exception in src/MemoryController.cpp" << std::endl;
-        //Give the opportunity to attach a debugger here.
-        #ifndef NDEBUG
-            raise( SIGSTOP );
-        #endif
-            GetStats( )->PrintAll( std::cerr );
-            exit(1);
+    ncounter_t srcAddr = GetDecoder( )->ReverseTranslate( srcRow, srcCol, srcBank, rank, id, srcSubArray );
+    transferRequest->address.SetPhysicalAddress( srcAddr );
+    transferRequest->address.SetTranslatedAddress( srcRow, srcCol, srcBank, rank, id, srcSubArray );
+
+    ncounter_t dstAddr = GetDecoder( )->ReverseTranslate( dstRow, dstCol, dstBank, rank, id, dstSubArray );
+    transferRequest->address2.SetPhysicalAddress( dstAddr );
+    transferRequest->address2.SetTranslatedAddress( dstRow, dstCol, dstBank, rank, id, dstSubArray );
+
+    transferRequest->issueCycle = GetEventQueue()->GetCurrentCycle();
+    transferRequest->owner = this;
+
+    return transferRequest;
+}
+
+/* Keep the controller's shadow copy of the bank state in step with an ACTIVATE. */
+void MemoryController::MarkBankActivated( const ncounter_t rank, const ncounter_t bank,
+                                          const ncounter_t subarray, const ncounter_t row )
+{
+    activateQueued[rank][bank] = true;
+    activeSubArray[rank][bank][subarray] = true;
+    effectiveRow[rank][bank][subarray] = row;
+    effectiveMuxedRow[rank][bank][subarray] = 0;
+    starvationCounter[rank][bank][subarray] = 0;
+}
+
+/* ... and with a PRECHARGE. The bank is only idle once no subarray is open. */
+void MemoryController::MarkBankPrecharged( const ncounter_t rank, const ncounter_t bank,
+                                           const ncounter_t subarray )
+{
+    activeSubArray[rank][bank][subarray] = false;
+    effectiveRow[rank][bank][subarray] = p->ROWS;
+    effectiveMuxedRow[rank][bank][subarray] = p->ROWS;
+
+    bool idle = true;
+    for( ncounter_t i = 0; i < subArrayNum; i++ )
+    {
+        if( activeSubArray[rank][bank][i] == true )
+        {
+            idle = false;
+            break;
+        }
     }
 
-    ncounter_t queueId = GetCommandQueueId(req->address);
-    //if already active and not correct row then close
-    if( activeSubArray[rank][bank][subarray] && effectiveRow[rank][bank][subarray] != row )
-        commandQueues[queueId].push_back( MakePrechargeRequest( req ) );
+    if( idle )
+        activateQueued[rank][bank] = false;
+}
 
-    //add activate 
-    commandQueues[queueId].push_back( MakeActivateRequest( row2, col2, bank2, rank2, subarray2 ));
-    //add request
-    commandQueues[queueId].push_back( req );
-    //add precharge
-    commandQueues[queueId].push_back( MakePrechargeRequest( req ) );
+/**
+ * Emit one RowClone-PSM hop: ACTIVATE the source row and the destination row,
+ * walk the row a cache line at a time with TRANSFER commands, then PRECHARGE
+ * both banks.
+ *
+ * Everything goes into a single command queue: the queue is FIFO, which is what
+ * orders the destination ACTIVATE ahead of the first TRANSFER, and NVMain routes
+ * each command to its own bank by address (Interconnect::IssueCommand uses
+ * GetChild( req )), so a queue is not restricted to commands for its own bank.
+ *
+ * If parent is non-NULL the last TRANSFER carries it, and retires it in
+ * RequestComplete() once the copy has landed.
+ */
+void MemoryController::EmitPSMHop( const ncounter_t queueId, const ncounter_t rank,
+                                   const ncounter_t srcRow, const ncounter_t srcBank, const ncounter_t srcSubArray,
+                                   const ncounter_t dstRow, const ncounter_t dstBank, const ncounter_t dstSubArray,
+                                   NVMainRequest *parent )
+{
+    /* Close whatever is open on either end if it is the wrong row. */
+    if( activeSubArray[rank][srcBank][srcSubArray]
+        && effectiveRow[rank][srcBank][srcSubArray] != srcRow )
+    {
+        commandQueues[queueId].push_back(
+            MakePrechargeRequest( effectiveRow[rank][srcBank][srcSubArray], 0, srcBank, rank, srcSubArray ) );
+        MarkBankPrecharged( rank, srcBank, srcSubArray );
+    }
 
-    //INTER_BANK ROWCLONE
-    //add activate for add
-    //add activate for add2
-    //add request (ALL THIS DOES IS ADD BUS TIMING AND ENERGY TO SUBARRAY OR MAYBE SHOULD BE HANDLED IN INTERCONNECT: ONCHIP BUS)
-    //add precharge for add
-    //add precharge for add2
+    if( activeSubArray[rank][dstBank][dstSubArray]
+        && effectiveRow[rank][dstBank][dstSubArray] != dstRow )
+    {
+        commandQueues[queueId].push_back(
+            MakePrechargeRequest( effectiveRow[rank][dstBank][dstSubArray], 0, dstBank, rank, dstSubArray ) );
+        MarkBankPrecharged( rank, dstBank, dstSubArray );
+    }
 
-    rv = true;
-    //add precharge
-    //schedule wakeup command
-    if( rv == true )
-        ScheduleCommandWake( );
-    return rv;
- }
+    commandQueues[queueId].push_back( MakeActivateRequest( srcRow, 0, srcBank, rank, srcSubArray ) );
+    MarkBankActivated( rank, srcBank, srcSubArray, srcRow );
+
+    commandQueues[queueId].push_back( MakeActivateRequest( dstRow, 0, dstBank, rank, dstSubArray ) );
+    MarkBankActivated( rank, dstBank, dstSubArray, dstRow );
+
+    /* One TRANSFER per cache line in the row. */
+    for( ncounter_t col = 0; col < p->COLS; col++ )
+    {
+        NVMainRequest *transferRequest =
+            MakeTransferRequest( srcRow, col, srcBank, srcSubArray,
+                                 dstRow, col, dstBank, dstSubArray, rank );
+
+        if( parent != NULL && col == ( p->COLS - 1 ) )
+        {
+            transferRequest->flags |= NVMainRequest::FLAG_TRANSFER_LAST;
+            transferRequest->reqInfo = static_cast<void *>( parent );
+        }
+
+        commandQueues[queueId].push_back( transferRequest );
+        psm_transfers++;
+    }
+
+    commandQueues[queueId].push_back( MakePrechargeRequest( srcRow, 0, srcBank, rank, srcSubArray ) );
+    MarkBankPrecharged( rank, srcBank, srcSubArray );
+
+    commandQueues[queueId].push_back( MakePrechargeRequest( dstRow, 0, dstBank, rank, dstSubArray ) );
+    MarkBankPrecharged( rank, dstBank, dstSubArray );
+}
+
+/**
+ * Expand a ROWCLONE into DRAM commands, picking the mechanism the way RowClone
+ * (Seshadri et al., MICRO 2013) does:
+ *
+ *   same subarray        -> FPM: ACT(src), overlapped ACT(dst), PRE
+ *   different bank       -> PSM: ACT both, one TRANSFER per line, PRE both
+ *   same bank, diff s/a  -> both ends share the bank I/O, so stage the copy
+ *                           through a row in a third bank: two PSM hops
+ *   different rank/chan  -> no in-DRAM path exists; the requestor must copy
+ */
+bool MemoryController::IssuePIMCommands( NVMainRequest *req )
+{
+    ncounter_t rank, bank, row, subarray, col;
+    ncounter_t rank2, bank2, row2, subarray2, col2;
+
+    req->address.GetTranslatedAddress( &row, &col, &bank, &rank, NULL, &subarray );
+    req->address2.GetTranslatedAddress( &row2, &col2, &bank2, &rank2, NULL, &subarray2 );
+
+    ncounter_t queueId = GetCommandQueueId( req->address );
+
+    /*
+     *  Neither mechanism crosses a rank or channel boundary: FPM needs a shared
+     *  set of sense amplifiers and PSM needs the shared internal bus, and
+     *  neither spans that far.
+     */
+    if( rank != rank2 )
+    {
+        std::cerr << "NVMain Error: RowClone 0x" << std::hex
+            << req->address.GetPhysicalAddress( ) << " -> 0x"
+            << req->address2.GetPhysicalAddress( ) << std::dec
+            << " crosses a rank/channel boundary; there is no in-DRAM path for it. "
+            << "The requestor has to perform this copy itself." << std::endl;
+
+        rowclone_unsupported++;
+
+        /*
+         *  Nothing was issued, but the request has already been taken off the
+         *  transaction queue, so retire it here rather than leaking it. Its
+         *  latency is NOT modelled: if rowclone_unsupported is ever non-zero the
+         *  data placement needs fixing, or the copy needs expanding into
+         *  ordinary READ/WRITE pairs by the requestor.
+         */
+        req->status = MEM_REQUEST_COMPLETE;
+        req->completionCycle = GetEventQueue( )->GetCurrentCycle( );
+        RequestComplete( req );
+
+        return false;
+    }
+
+    if( bank == bank2 && subarray == subarray2 )
+    {
+        /*
+         *  RowClone-FPM. The two rows share sense amplifiers, so ACTIVATE the
+         *  source (latching it) and let the overlapped ACTIVATE carried by the
+         *  ROWCLONE request itself drive it into the destination.
+         */
+        if( activeSubArray[rank][bank][subarray] && effectiveRow[rank][bank][subarray] != row )
+        {
+            commandQueues[queueId].push_back(
+                MakePrechargeRequest( effectiveRow[rank][bank][subarray], 0, bank, rank, subarray ) );
+            MarkBankPrecharged( rank, bank, subarray );
+        }
+
+        commandQueues[queueId].push_back( MakeActivateRequest( row, col, bank, rank, subarray ) );
+        MarkBankActivated( rank, bank, subarray, row );
+
+        req->issueCycle = GetEventQueue()->GetCurrentCycle();
+        commandQueues[queueId].push_back( req );
+
+        /* The destination row is the one left open by the overlapped ACTIVATE. */
+        effectiveRow[rank][bank][subarray] = row2;
+
+        commandQueues[queueId].push_back( MakePrechargeRequest( row2, 0, bank, rank, subarray ) );
+        MarkBankPrecharged( rank, bank, subarray );
+
+        rowclone_fpm++;
+    }
+    else if( bank != bank2 )
+    {
+        /* RowClone-PSM, inter-bank: a single hop over the internal bus. */
+        EmitPSMHop( queueId, rank, row, bank, subarray, row2, bank2, subarray2, req );
+
+        rowclone_psm_bank++;
+    }
+    else
+    {
+        /*
+         *  Same bank, different subarray. A TRANSFER needs two distinct banks
+         *  because both ends contend for the same bank I/O, so the copy is
+         *  staged through a row in a neighbouring bank -- two PSM hops, and
+         *  roughly twice the cost, exactly as RowClone describes.
+         */
+        ncounter_t tempBank = ( bank + 1 ) % p->BANKS;
+
+        EmitPSMHop( queueId, rank, row, bank, subarray,
+                    psmTempRow, tempBank, psmTempSubArray, NULL );
+        EmitPSMHop( queueId, rank, psmTempRow, tempBank, psmTempSubArray,
+                    row2, bank2, subarray2, req );
+
+        rowclone_psm_subarray++;
+    }
+
+    ScheduleCommandWake( );
+
+    return true;
+}
 #endif
 
 

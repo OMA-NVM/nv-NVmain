@@ -69,6 +69,7 @@ StandardRank::StandardRank( )
     writes = 0;
 #ifdef MEM_SUBSYSTEM
     rowclones = 0;
+    transfers = 0;
 #endif
     
     actWaits = 0;
@@ -220,6 +221,7 @@ void StandardRank::RegisterStats( )
     AddStat(writes);
 #ifdef MEM_SUBSYSTEM
     AddStat(rowclones);
+    AddStat(transfers);
 #endif
     
     AddStat(activeCycles);
@@ -289,6 +291,53 @@ bool StandardRank::Rowclone( NVMainRequest *request )
 
     rowclones++;
     return true;
+}
+
+/**
+ * Transfer() implements the idealized RowClone-PSM TRANSFER command: one cache
+ * line is moved from the source bank's open row to the destination bank's open
+ * row over the DRAM-internal bus, without ever occupying the memory channel.
+ *
+ * That internal bus is shared by every bank in the rank -- the same resource
+ * ordinary column commands contend for -- so we account it here and let the two
+ * banks below account only their own end of the burst. The same request object
+ * is handed to both banks; each tags itself as source or destination from its
+ * own bank id (DDR3Bank::MarkTransferRole).
+ */
+bool StandardRank::Transfer( NVMainRequest *request )
+{
+    uint64_t srcBank, dstBank;
+
+    request->address.GetTranslatedAddress( NULL, NULL, &srcBank, NULL, NULL, NULL );
+    request->address2.GetTranslatedAddress( NULL, NULL, &dstBank, NULL, NULL, NULL );
+
+    if( srcBank >= bankCount || dstBank >= bankCount )
+    {
+        std::cerr << "Rank: Attempted TRANSFER with a non-existant bank ("
+            << srcBank << " -> " << dstBank << ")" << std::endl;
+        return false;
+    }
+
+    if( srcBank == dstBank )
+    {
+        std::cerr << "Rank: TRANSFER source and destination are both bank " << srcBank
+            << ". RowClone-PSM moves data between two distinct banks." << std::endl;
+        return false;
+    }
+
+    /* The internal bus is busy for one burst, blocking other column commands. */
+    ncycle_t busOccupancy = MAX( p->tBURST, p->tCCD );
+
+    nextRead = MAX( nextRead, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+    nextWrite = MAX( nextWrite, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+
+    /* Issue to the source end first so the line is latched before it is driven. */
+    bool rv = GetChild( srcBank )->IssueCommand( request );
+    rv = GetChild( dstBank )->IssueCommand( request ) && rv;
+
+    transfers++;
+
+    return rv;
 }
 #endif
 
@@ -660,6 +709,9 @@ ncycle_t StandardRank::NextIssuable( NVMainRequest *request )
         || request->type == ROWCLONE
 #endif
         ) nextCompare = MAX( nextActivate, lastActivate[(RAWindex+1)%rawNum] + p->tRAW );
+#ifdef MEM_SUBSYSTEM
+    else if( request->type == TRANSFER ) nextCompare = MAX( nextRead, nextWrite );
+#endif
     else if( request->type == READ || request->type == READ_PRECHARGE ) nextCompare = nextRead;
     else if( request->type == WRITE || request->type == WRITE_PRECHARGE ) nextCompare = nextWrite;
     else if( request->type == PRECHARGE || request->type == PRECHARGE_ALL ) nextCompare = nextPrecharge;
@@ -721,6 +773,36 @@ bool StandardRank::IsIssuable( NVMainRequest *req, FailReason *reason )
     else if( req->type == ROWCLONE)
     {
         rv = GetChild( req )->IsIssuable(req, reason);
+    }
+    else if( req->type == TRANSFER )
+    {
+        uint64_t srcBank, dstBank;
+
+        req->address.GetTranslatedAddress( NULL, NULL, &srcBank, NULL, NULL, NULL );
+        req->address2.GetTranslatedAddress( NULL, NULL, &dstBank, NULL, NULL, NULL );
+
+        if( srcBank >= bankCount || dstBank >= bankCount || srcBank == dstBank )
+        {
+            rv = false;
+            if( reason )
+                reason->reason = RANK_TIMING;
+        }
+        else if( nextRead > GetEventQueue( )->GetCurrentCycle( )
+                 || nextWrite > GetEventQueue( )->GetCurrentCycle( ) )
+        {
+            /* The shared internal bus is still busy with a previous burst. */
+            rv = false;
+            if( reason )
+                reason->reason = RANK_TIMING;
+        }
+        else
+        {
+            /* Both ends have to be ready before the line can move. */
+            rv = GetChild( srcBank )->IsIssuable( req, reason );
+
+            if( rv )
+                rv = GetChild( dstBank )->IsIssuable( req, reason );
+        }
     }
 #endif
     else if( req->type == READ || req->type == READ_PRECHARGE )
@@ -843,6 +925,10 @@ bool StandardRank::IssueCommand( NVMainRequest *req )
 #ifdef MEM_SUBSYSTEM
             case ROWCLONE:
                 rv = this->Rowclone( req );
+                break;
+
+            case TRANSFER:
+                rv = this->Transfer( req );
                 break;
 #endif
             case WRITE:

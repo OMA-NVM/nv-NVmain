@@ -400,6 +400,23 @@ bool NVMain::IssueCommand( NVMainRequest *request )
     request->address.SetTranslatedAddress( row, col, bank, rank, channel, subarray );
     request->bulkCmd = CMD_NOP;
 
+#ifdef MEM_SUBSYSTEM
+    /*
+     *  A RowClone destination must be translated before the controller can
+     *  classify the copy (same subarray -> FPM, same rank -> PSM, otherwise no
+     *  in-DRAM path), so it happens here rather than after the request has
+     *  already been accepted by a controller.
+     */
+    if( request->type == ROWCLONE )
+    {
+        ncounter_t channel2, rank2, bank2, row2, col2, subarray2;
+
+        GetDecoder( )->Translate( request->address2.GetPhysicalAddress( ),
+                               &row2, &col2, &bank2, &rank2, &channel2, &subarray2 );
+        request->address2.SetTranslatedAddress( row2, col2, bank2, rank2, channel2, subarray2 );
+    }
+#endif
+
     /* Check for any successful prefetches. */
     if( CheckPrefetch( request ) )
     {
@@ -422,10 +439,7 @@ bool NVMain::IssueCommand( NVMainRequest *request )
 #ifdef MEM_SUBSYSTEM
         else if(request->type == ROWCLONE)
         {
-            /* Translate address 2 for RC */
-            GetDecoder( )->Translate( request->address2.GetPhysicalAddress( ), 
-                                &row, &col, &bank, &rank, &channel, &subarray );
-            request->address2.SetTranslatedAddress( row, col, bank, rank, channel, subarray );
+            /* address2 was already translated above, before the controller saw it. */
             totalPIMRequests++;
         }
 #endif
@@ -457,6 +471,23 @@ bool NVMain::IssueAtomic( NVMainRequest *request )
                            &row, &col, &bank, &rank, &channel, &subarray );
     request->address.SetTranslatedAddress( row, col, bank, rank, channel, subarray );
     request->bulkCmd = CMD_NOP;
+
+#ifdef MEM_SUBSYSTEM
+    /*
+     *  A RowClone destination must be translated before the controller can
+     *  classify the copy (same subarray -> FPM, same rank -> PSM, otherwise no
+     *  in-DRAM path), so it happens here rather than after the request has
+     *  already been accepted by a controller.
+     */
+    if( request->type == ROWCLONE )
+    {
+        ncounter_t channel2, rank2, bank2, row2, col2, subarray2;
+
+        GetDecoder( )->Translate( request->address2.GetPhysicalAddress( ),
+                               &row2, &col2, &bank2, &rank2, &channel2, &subarray2 );
+        request->address2.SetTranslatedAddress( row2, col2, bank2, rank2, channel2, subarray2 );
+    }
+#endif
 
     /* Check for any successful prefetches. */
     if( CheckPrefetch( request ) )

@@ -49,7 +49,8 @@ enum OpType
     ACTIVATE,       /* a.k.a. RAS */
     READ,           /* a.k.a. CAS-R */ 
 #ifdef MEM_SUBSYSTEM
-    ROWCLONE,
+    ROWCLONE,       /* RowClone-FPM: intra-subarray row copy (two back-to-back ACTs) */
+    TRANSFER,       /* RowClone-PSM: move one cache line src bank -> dst bank */
 #endif
     READ_PRECHARGE, /* CAS-R with implicit PRECHARGE */ 
     WRITE,          /* a.k.a. CAS-W */  
@@ -185,6 +186,10 @@ class NVMainRequest
         FLAG_FORCED = 32,               // This write can not be paused or cancelled
         FLAG_PRIORITY = 64,             // Request (or precursor) that takes priority over write
         FLAG_ISSUED = 128,              // Request has left the command queue
+#ifdef MEM_SUBSYSTEM
+        FLAG_TRANSFER_DST = 256,        // This side of a TRANSFER is the destination
+        FLAG_TRANSFER_LAST = 512,       // Last TRANSFER of a RowClone-PSM sequence
+#endif
         FLAG_COUNT
     };
 

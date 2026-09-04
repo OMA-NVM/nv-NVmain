@@ -166,6 +166,10 @@ class DDR3Bank : public Bank
     ncounter_t bankId;
  
     virtual bool Activate( NVMainRequest *request );
+#ifdef MEM_SUBSYSTEM
+    virtual bool Transfer( NVMainRequest *request );
+    bool MarkTransferRole( NVMainRequest *request );
+#endif
     virtual bool Read( NVMainRequest *request );
     virtual bool Write( NVMainRequest *request );
     virtual bool Precharge( NVMainRequest *request );

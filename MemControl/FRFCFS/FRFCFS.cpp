@@ -200,7 +200,11 @@ bool FRFCFS::RequestComplete( NVMainRequest * request )
     if( request->type == READ 
         || request->type == READ_PRECHARGE 
         || request->type == WRITE 
-        || request->type == WRITE_PRECHARGE )
+        || request->type == WRITE_PRECHARGE 
+#ifdef MEM_SUBSYSTEM
+        || request->type == ROWCLONE
+#endif
+        )
     {
         request->status = MEM_REQUEST_COMPLETE;
         request->completionCycle = GetEventQueue()->GetCurrentCycle();

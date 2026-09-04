@@ -86,6 +86,7 @@ class SubArray : public NVMObject
     bool Activate( NVMainRequest *request );
     #ifdef MEM_SUBSYSTEM
     bool Rowclone( NVMainRequest *request );
+    bool Transfer( NVMainRequest *request );
     #endif
     bool Read( NVMainRequest *request );
     bool Write( NVMainRequest *request );
@@ -188,7 +189,7 @@ class SubArray : public NVMObject
     uint64_t worstCaseEndurance, averageEndurance;
 
 #ifdef MEM_SUBSYSTEM
-    ncounter_t reads, writes, activates, rowclones, precharges, refreshes;
+    ncounter_t reads, writes, activates, rowclones, transfers, precharges, refreshes;
 #else
     ncounter_t reads, writes, activates, precharges, refreshes;
 #endif

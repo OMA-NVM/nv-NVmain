@@ -701,12 +701,73 @@ ncycle_t DDR3Bank::NextIssuable( NVMainRequest *request )
     ncycle_t nextCompare = 0;
 
     if( request->type == ACTIVATE || request->type == REFRESH ) nextCompare = nextActivate;
+#ifdef MEM_SUBSYSTEM
+    else if( request->type == TRANSFER ) nextCompare = MAX( nextRead, nextWrite );
+#endif
     else if( request->type == READ || request->type == READ_PRECHARGE ) nextCompare = nextRead;
     else if( request->type == WRITE || request->type == WRITE_PRECHARGE ) nextCompare = nextWrite;
     else if( request->type == PRECHARGE || request->type == PRECHARGE_ALL ) nextCompare = nextPrecharge;
         
     return MAX(GetChild( request )->NextIssuable( request ), nextCompare );
 }
+
+#ifdef MEM_SUBSYSTEM
+/*
+ * A TRANSFER is issued to both the source and the destination bank. Work out
+ * which end we are from our own bank id and tag the request, so the subarray
+ * below us knows whether to model a read burst or a write burst. Returns false
+ * if this bank is involved in neither end of the copy.
+ */
+bool DDR3Bank::MarkTransferRole( NVMainRequest *request )
+{
+    uint64_t srcBank, dstBank;
+
+    request->address.GetTranslatedAddress( NULL, NULL, &srcBank, NULL, NULL, NULL );
+    request->address2.GetTranslatedAddress( NULL, NULL, &dstBank, NULL, NULL, NULL );
+
+    if( bankId == dstBank )
+        request->flags |= NVMainRequest::FLAG_TRANSFER_DST;
+    else if( bankId == srcBank )
+        request->flags &= ~( (uint64_t)NVMainRequest::FLAG_TRANSFER_DST );
+    else
+        return false;
+
+    return true;
+}
+
+/*
+ * Transfer() forwards one cache line of a RowClone-PSM copy to whichever of our
+ * subarrays holds our end of it. Note we cannot use GetChild( request ), which
+ * decodes the *source* address -- the destination bank has to route on address2.
+ */
+bool DDR3Bank::Transfer( NVMainRequest *request )
+{
+    uint64_t transferSubArray;
+    bool isDest = ( request->flags & NVMainRequest::FLAG_TRANSFER_DST ) != 0;
+
+    if( state != DDR3BANK_OPEN )
+    {
+        std::cerr << "NVMain Error: try to TRANSFER on a bank that is not active!"
+            << std::endl;
+        return false;
+    }
+
+    if( isDest )
+        request->address2.GetTranslatedAddress( NULL, NULL, NULL, NULL, NULL, &transferSubArray );
+    else
+        request->address.GetTranslatedAddress( NULL, NULL, NULL, NULL, NULL, &transferSubArray );
+
+    /* Update timing constraints */
+    ncycle_t busOccupancy = MAX( p->tBURST, p->tCCD );
+
+    nextRead = MAX( nextRead, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+    nextWrite = MAX( nextWrite, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+    nextPowerDown = MAX( nextPowerDown,
+                         GetEventQueue()->GetCurrentCycle() + busOccupancy + 1 );
+
+    return GetChild( transferSubArray )->IssueCommand( request );
+}
+#endif
 
 /*
  * IsIssuable() tells whether one request satisfies the timing constraints
@@ -740,6 +801,37 @@ bool DDR3Bank::IsIssuable( NVMainRequest *req, FailReason *reason )
             rv = GetChild( req )->IsIssuable( req, reason );
         }
     }
+#ifdef MEM_SUBSYSTEM
+    else if( req->type == TRANSFER )
+    {
+        uint64_t transferSubArray;
+
+        if( !MarkTransferRole( req ) )
+        {
+            /* Neither end of this copy is in this bank. */
+            rv = false;
+            if( reason )
+                reason->reason = BANK_TIMING;
+        }
+        else if( nextRead > (GetEventQueue()->GetCurrentCycle())
+                 || nextWrite > (GetEventQueue()->GetCurrentCycle())
+                 || state != DDR3BANK_OPEN )
+        {
+            rv = false;
+            if( reason )
+                reason->reason = BANK_TIMING;
+        }
+        else
+        {
+            if( req->flags & NVMainRequest::FLAG_TRANSFER_DST )
+                req->address2.GetTranslatedAddress( NULL, NULL, NULL, NULL, NULL, &transferSubArray );
+            else
+                req->address.GetTranslatedAddress( NULL, NULL, NULL, NULL, NULL, &transferSubArray );
+
+            rv = GetChild( transferSubArray )->IsIssuable( req, reason );
+        }
+    }
+#endif
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
         if( nextRead > (GetEventQueue()->GetCurrentCycle()) 
@@ -888,7 +980,11 @@ bool DDR3Bank::IssueCommand( NVMainRequest *req )
             case READ_PRECHARGE:
                 rv = this->Read( req );
                 break;
-            
+#ifdef MEM_SUBSYSTEM
+            case TRANSFER:
+                rv = this->Transfer( req );
+                break;
+#endif
             case WRITE:
             case WRITE_PRECHARGE:
                 rv = this->Write( req );

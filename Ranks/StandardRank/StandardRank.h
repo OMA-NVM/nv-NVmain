@@ -131,7 +131,7 @@ class StandardRank : public Rank
     double actWaitAverage;
 
 #ifdef MEM_SUBSYSTEM
-    ncounter_t reads, writes, rowclones;
+    ncounter_t reads, writes, rowclones, transfers;
 #else
     ncounter_t reads, writes;
 #endif
@@ -142,6 +142,7 @@ class StandardRank : public Rank
     bool Activate( NVMainRequest *request );
 #ifdef MEM_SUBSYSTEM
     bool Rowclone( NVMainRequest *request );
+    bool Transfer( NVMainRequest *request );
 #endif
     bool Read( NVMainRequest *request );
     bool Write( NVMainRequest *request );

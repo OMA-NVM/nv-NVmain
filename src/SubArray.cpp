@@ -119,6 +119,7 @@ SubArray::SubArray( )
     refreshes = 0;
 #ifdef MEM_SUBSYSTEM
     rowclones = 0;    
+    transfers = 0;
 #endif
 
     actWaits = 0;
@@ -249,6 +250,7 @@ void SubArray::RegisterStats( )
     AddStat(refreshes);
 #ifdef MEM_SUBSYSTEM
     AddStat(rowclones);    
+    AddStat(transfers);
 #endif
 
     if( endrModel )
@@ -368,7 +370,13 @@ bool SubArray::Activate( NVMainRequest *request )
 bool SubArray::Rowclone( NVMainRequest *request ){
     uint64_t activateRow;
 
-    request->address.GetTranslatedAddress( &activateRow, NULL, NULL, NULL, NULL, NULL );
+    /*
+     *  RowClone-FPM is ACT(src) followed by this overlapped ACT(dst): the source
+     *  row has already been latched into the sense amplifiers by the preceding
+     *  ACTIVATE, and this second activation drives it into the destination row.
+     *  So the row left open here is the destination, i.e. address2.
+     */
+    request->address2.GetTranslatedAddress( &activateRow, NULL, NULL, NULL, NULL, NULL );
 
     /* Check if we need to cancel or pause a write to service this request. */
     CheckWritePausing( );
@@ -421,6 +429,96 @@ bool SubArray::Rowclone( NVMainRequest *request ){
     }
 
     rowclones++;
+
+    return true;
+}
+
+/**
+ * Transfer() models one cache line of a RowClone-PSM copy, i.e. the idealized
+ * TRANSFER command of Seshadri et al. The same request is issued to both the
+ * source and the destination subarray; FLAG_TRANSFER_DST tells us which side we
+ * are (DDR3Bank tags it before forwarding). Both rows must already be open.
+ *
+ * Unlike Read()/Write() we deliberately do NOT generate a BUS_READ/BUS_WRITE
+ * burst: an idealized TRANSFER moves the line over the shared internal DRAM bus
+ * and never occupies the memory channel. That internal bus is modelled at the
+ * rank (see StandardRank::Transfer), which is where cross-bank serialization
+ * belongs; here we only account the per-device burst at each end.
+ */
+bool SubArray::Transfer( NVMainRequest *request )
+{
+    bool isDest = ( request->flags & NVMainRequest::FLAG_TRANSFER_DST ) != 0;
+    uint64_t opRow;
+
+    if( isDest )
+        request->address2.GetTranslatedAddress( &opRow, NULL, NULL, NULL, NULL, NULL );
+    else
+        request->address.GetTranslatedAddress( &opRow, NULL, NULL, NULL, NULL, NULL );
+
+    /* Check if we need to cancel or pause a write to service this request. */
+    CheckWritePausing( );
+
+    if( state != SUBARRAY_OPEN )
+    {
+        std::cerr << "NVMain Error: try to TRANSFER on a subarray that is not active!"
+            << std::endl;
+        return false;
+    }
+    else if( opRow != openRow )
+    {
+        std::cerr << "NVMain Error: try to TRANSFER a row that is not opened in a subarray!"
+            << std::endl;
+        return false;
+    }
+
+    /* The line occupies the internal bus for one burst. */
+    ncycle_t busOccupancy = MAX( p->tBURST, p->tCCD );
+
+    nextRead = MAX( nextRead, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+    nextWrite = MAX( nextWrite, GetEventQueue()->GetCurrentCycle() + busOccupancy );
+
+    if( isDest )
+    {
+        /* Destination cells are driven, so the usual write recovery applies. */
+        nextPrecharge = MAX( nextPrecharge,
+                             GetEventQueue()->GetCurrentCycle()
+                                 + p->tAL + p->tCWD + p->tBURST + p->tWR );
+    }
+    else
+    {
+        nextPrecharge = MAX( nextPrecharge,
+                             GetEventQueue()->GetCurrentCycle()
+                                 + p->tAL + p->tBURST + p->tRTP - p->tCCD );
+    }
+
+    nextPowerDown = MAX( nextPowerDown,
+                         GetEventQueue()->GetCurrentCycle() + busOccupancy + 1 );
+
+    /*
+     *  Only the destination signals completion -- the line has landed once it is
+     *  written there, and a single response keeps the request retiring once.
+     */
+    if( isDest )
+        GetEventQueue( )->InsertEvent( EventResponse, this, request,
+                        GetEventQueue()->GetCurrentCycle() + p->tCAS + p->tBURST );
+
+    /* A read burst is drawn at the source and a write burst at the destination. */
+    if( p->EnergyModel == "current" )
+    {
+        double idd = isDest ? ( p->EIDD4W - p->EIDD3N ) : ( p->EIDD4R - p->EIDD3N );
+
+        subArrayEnergy += ( idd * (double)(p->tBURST) ) / (double)(p->BANKS);
+        burstEnergy += ( idd * (double)(p->tBURST) ) / (double)(p->BANKS);
+    }
+    else
+    {
+        /* Flat energy model. */
+        subArrayEnergy += isDest ? p->Ewr : p->Eopenrd;
+        burstEnergy += isDest ? p->Ewr : p->Eopenrd;
+    }
+
+    transfers++;
+    dataCycles += p->tBURST;
 
     return true;
 }
@@ -1174,6 +1272,9 @@ ncycle_t SubArray::NextIssuable( NVMainRequest *request )
     else if( request->type == READ ) nextCompare = nextRead;
     else if( request->type == WRITE ) nextCompare = nextWrite;
     else if( request->type == PRECHARGE ) nextCompare = nextPrecharge;
+#ifdef MEM_SUBSYSTEM
+    else if( request->type == TRANSFER ) nextCompare = MAX( nextRead, nextWrite );
+#endif
         
     // Should have no children
     return nextCompare;
@@ -1225,6 +1326,25 @@ bool SubArray::IsIssuable( NVMainRequest *req, FailReason *reason )
                 reason->reason = SUBARRAY_TIMING;
         }
     }    
+    else if ( req->type == TRANSFER )
+    {
+        /* Which row we need open depends on which end of the TRANSFER we are. */
+        uint64_t transferRow = opRow;
+
+        if( req->flags & NVMainRequest::FLAG_TRANSFER_DST )
+            req->address2.GetTranslatedAddress( &transferRow, NULL, NULL, NULL, NULL, NULL );
+
+        if( nextRead > (GetEventQueue()->GetCurrentCycle()) /* too early for a column command */
+            || nextWrite > (GetEventQueue()->GetCurrentCycle())
+            || state != SUBARRAY_OPEN   /* or, the subarray is not active */
+            || transferRow != openRow   /* or, our end of the copy is not the open row */
+            || ( p->WritePausing && isWriting && writeRequest->flags & NVMainRequest::FLAG_FORCED ) )
+        {
+            rv = false;
+            if( reason ) 
+                reason->reason = SUBARRAY_TIMING;
+        }
+    }
 #endif
     else if( req->type == READ || req->type == READ_PRECHARGE )
     {
@@ -1330,6 +1450,10 @@ bool SubArray::IssueCommand( NVMainRequest *req )
             case ROWCLONE:
                 rv = this->Rowclone( req );
                 break;            
+
+            case TRANSFER:
+                rv = this->Transfer( req );
+                break;
 #endif
             case WRITE:
             case WRITE_PRECHARGE:
